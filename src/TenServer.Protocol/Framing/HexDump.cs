@@ -10,8 +10,14 @@ public static class HexDump
     /// is over a kilobyte, which is more console than it is worth; the interesting bytes
     /// of a malformed payload are almost always at the front.
     /// </param>
-    public static string Format(ReadOnlySpan<byte> data, int width = 16, int maxBytes = int.MaxValue)
+    public static string Format(
+        ReadOnlySpan<byte> data,
+        int width = 16,
+        int maxBytes = int.MaxValue,
+        AnsiPalette? palette = null)
     {
+        var p = palette ?? AnsiPalette.None;
+
         if (data.IsEmpty)
             return string.Empty;
 
@@ -37,11 +43,18 @@ public static class HexDump
             }
 
             if (sb.Length > 0) sb.Append('\n');
-            sb.Append($"{i:X4}  {hex,-48}  {ascii}");
+
+            // Pad before colouring so the escape codes do not count toward the column.
+            sb.Append(p.Paint(p.Dim, $"{i:X4}"))
+              .Append("  ")
+              .Append(hex.ToString().PadRight(48))
+              .Append("  ")
+              .Append(p.Paint(p.Text, ascii.ToString()));
         }
 
         if (omitted > 0)
-            sb.Append($"\n      ... {omitted} more byte{(omitted == 1 ? "" : "s")}");
+            sb.Append('\n').Append(p.Paint(
+                p.Dim, $"      ... {omitted} more byte{(omitted == 1 ? "" : "s")}"));
 
         return sb.ToString();
     }

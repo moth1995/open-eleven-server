@@ -222,6 +222,26 @@ public sealed class DebugOptions
     /// </summary>
     public bool PrettyPrintPayloads { get; set; } = true;
 
+    /// <summary>Colourise packet logs. See <see cref="ConsoleColorMode"/>.</summary>
+    public ConsoleColorMode Colors { get; set; } = ConsoleColorMode.Auto;
+
     public bool LogUnknownCommands { get; set; } = true;
     public bool LogOutboundPayloads { get; set; } = true;
+}
+
+public enum ConsoleColorMode
+{
+    /// <summary>
+    /// Colour only on a real terminal: off when output is redirected, when a debugger is
+    /// attached, or when NO_COLOR is set. Visual Studio's Output window is fed by the
+    /// Debug logger provider, which prints escape sequences literally, so Auto keeps it
+    /// clean there.
+    /// </summary>
+    Auto,
+
+    /// <summary>Always emit colour, whatever the output looks like.</summary>
+    Always,
+
+    /// <summary>Never emit colour.</summary>
+    Never,
 }

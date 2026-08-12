@@ -142,6 +142,7 @@ Keys worth knowing:
 | `Database.Provider` | `Sqlite` for a zero-infrastructure dev run, `MySql` for deployment. |
 | `Debug.HexDump` | Hex + ASCII of every packet's data, both directions, including binary packets. On by default for RE work. `Debug.HexDumpMaxBytes` caps it per packet (0 = uncapped). |
 | `Debug.PrettyPrintPayloads` | Renders key=value payloads as an indented tree instead of one long line. Turn off to get the raw wire text back. |
+| `Debug.Colors` | `Auto` (default), `Always` or `Never`. Auto colours only on a real terminal. **Visual Studio's Output window shows no colour** — it is fed by the Debug logger provider, which prints escape codes literally; run from a terminal to see it. |
 
 ## Architecture
 

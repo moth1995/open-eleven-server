@@ -141,6 +141,12 @@ Server:
     HexDumpMaxBytes: 320
     # Render key=value payloads as an indented tree instead of one long line.
     PrettyPrintPayloads: true
+    # Auto | Always | Never. Auto colours only on a real terminal, and stays off when
+    # output is redirected, a debugger is attached, or NO_COLOR is set. That last part
+    # matters in Visual Studio: its Output window comes from the Debug logger provider,
+    # which prints escape sequences literally as ←[36m. Use a terminal to see colour,
+    # or Always if you have one that renders them anyway.
+    Colors: Auto
     LogUnknownCommands: true
     LogOutboundPayloads: true
 

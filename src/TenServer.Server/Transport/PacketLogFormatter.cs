@@ -1,4 +1,5 @@
 using System.Text;
+using TenServer.Protocol;
 using TenServer.Protocol.Framing;
 using TenServer.Protocol.Kv;
 using TenServer.Server.Configuration;
@@ -11,17 +12,34 @@ namespace TenServer.Server.Transport;
 /// </summary>
 internal static class PacketLogFormatter
 {
+    /// <summary>
+    /// Whether this process is writing to something that understands escape sequences.
+    /// Evaluated once: none of these can change while the server runs.
+    /// </summary>
+    private static readonly bool TerminalSupportsColor =
+        !Console.IsOutputRedirected
+        && !System.Diagnostics.Debugger.IsAttached
+        && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("NO_COLOR"));
+
+    internal static AnsiPalette PaletteFor(DebugOptions debug) => debug.Colors switch
+    {
+        ConsoleColorMode.Always => AnsiPalette.Default,
+        ConsoleColorMode.Never => AnsiPalette.None,
+        _ => TerminalSupportsColor ? AnsiPalette.Default : AnsiPalette.None,
+    };
+
     /// <summary>A parsed key=value packet: pretty payload, then the bytes.</summary>
     public static string Format(KvMessage message, string payloadText, DebugOptions debug)
     {
+        var palette = PaletteFor(debug);
         var sb = new StringBuilder();
 
         if (debug.PrettyPrintPayloads)
-            sb.Append(KvPrettyPrinter.Format(message));
+            sb.Append(KvPrettyPrinter.Format(message, palette));
         else
             sb.Append("  ").Append(payloadText);
 
-        AppendHex(sb, Encoding.ASCII.GetBytes(payloadText), debug, "payload");
+        AppendHex(sb, Encoding.ASCII.GetBytes(payloadText), debug, "payload", palette);
         return sb.ToString();
     }
 
@@ -32,12 +50,16 @@ internal static class PacketLogFormatter
     public static string FormatBinary(ReadOnlySpan<byte> data, DebugOptions debug)
     {
         var sb = new StringBuilder();
-        AppendHex(sb, data, debug, "body (still Blowfish-encrypted)");
+        AppendHex(sb, data, debug, "body (still Blowfish-encrypted)", PaletteFor(debug));
         return sb.Length == 0 ? "  (no data)" : sb.ToString();
     }
 
     private static void AppendHex(
-        StringBuilder sb, ReadOnlySpan<byte> data, DebugOptions debug, string label)
+        StringBuilder sb,
+        ReadOnlySpan<byte> data,
+        DebugOptions debug,
+        string label,
+        AnsiPalette palette)
     {
         if (!debug.HexDump || data.IsEmpty)
             return;
@@ -47,11 +69,13 @@ internal static class PacketLogFormatter
         if (sb.Length > 0)
             sb.Append('\n');
 
-        sb.Append("  ").Append(label).Append(" (").Append(data.Length).Append(" bytes):\n");
+        sb.Append("  ")
+          .Append(palette.Paint(palette.Dim, $"{label} ({data.Length} bytes):"))
+          .Append('\n');
 
         // Indent the dump so it reads as part of this packet's block rather than as
         // separate log lines.
-        foreach (var line in HexDump.Format(data, maxBytes: max).Split('\n'))
+        foreach (var line in HexDump.Format(data, maxBytes: max, palette: palette).Split('\n'))
             sb.Append("  ").Append(line).Append('\n');
 
         sb.Length--; // trailing newline

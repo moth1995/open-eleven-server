@@ -1,3 +1,4 @@
+using TenServer.Protocol;
 using TenServer.Protocol.Kv;
 using Xunit;
 
@@ -90,6 +91,46 @@ public class KvPrettyPrinterTests
             new KvMessage().SetList("count", "roomList", []));
 
         Assert.Contains("roomList = []", text);
+    }
+
+    [Fact]
+    public void The_none_palette_is_identical_to_passing_nothing()
+    {
+        Assert.Equal(
+            KvPrettyPrinter.Format(RoomList()),
+            KvPrettyPrinter.Format(RoomList(), AnsiPalette.None));
+    }
+
+    [Fact]
+    public void Colour_adds_escape_codes_without_changing_the_visible_text()
+    {
+        var plain = KvPrettyPrinter.Format(RoomList());
+        var coloured = KvPrettyPrinter.Format(RoomList(), AnsiPalette.Default);
+
+        Assert.Contains('\e', coloured);
+        Assert.DoesNotContain('\e', plain);
+
+        // Strip the codes back out: what is left must be the uncoloured rendering.
+        var stripped = System.Text.RegularExpressions.Regex.Replace(
+            coloured, @"\e\[[0-9;]*m", "");
+        Assert.Equal(plain, stripped);
+    }
+
+    /// <summary>
+    /// Escape codes have no display width. Padding a key after colouring it would count
+    /// them, and every aligned column would drift by the length of a colour code.
+    /// </summary>
+    [Fact]
+    public void Alignment_survives_colouring()
+    {
+        var coloured = KvPrettyPrinter.Format(
+            new KvMessage().Set("a", 1).Set("longer_key", 2), AnsiPalette.Default);
+
+        var stripped = System.Text.RegularExpressions.Regex.Replace(
+            coloured, @"\e\[[0-9;]*m", "");
+
+        Assert.Contains("a          = 1", stripped);
+        Assert.Contains("longer_key = 2", stripped);
     }
 
     /// <summary>
