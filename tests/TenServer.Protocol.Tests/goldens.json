@@ -1,0 +1,136 @@
+{
+  "xorKey": "5B9F2E64",
+  "blowfishKey": "D8890AF066C96B40D701AEFC436FF9FEC98998167A74483D3914730C5C01C03CE28E86E589C4A185F8540651D2ECA36B5C1A40EEC5E9DAAE",
+  "innerBodies": [
+    {
+      "payload": "",
+      "wrapped": "00000000000000000000000000000000"
+    },
+    {
+      "payload": "a",
+      "wrapped": "00000001000000010061000000000000"
+    },
+    {
+      "payload": "1234567",
+      "wrapped": "00000007000000070031323334353637"
+    },
+    {
+      "payload": "result=\"NOERR\",msg=\"CMD_GET_SVRTIME\",rqid=1,date=0",
+      "wrapped": "000000320000003200726573756C743D224E4F455252222C6D73673D22434D445F4745545F53565254494D45222C727169643D312C646174653D300000000000"
+    },
+    {
+      "payload": "result=\"NOERR\",msg=\"MSG_CHALLENGE\",rqid=4,ccode=\"00112233445566778899aabbccddeeff\"",
+      "wrapped": "000000520000005200726573756C743D224E4F455252222C6D73673D224D53475F4348414C4C454E4745222C727169643D342C63636F64653D223030313132323333343435353636373738383939616162626363646465656666220000000000"
+    }
+  ],
+  "blowfishBlocks": [
+    {
+      "payload": "",
+      "encrypted": "5A9B38C1220AD9305A9B38C1220AD930"
+    },
+    {
+      "payload": "a",
+      "encrypted": "83EE25C7A1136F6C4FC6E2B419DFC5C5"
+    },
+    {
+      "payload": "1234567",
+      "encrypted": "D45196F9D66969DFC7DC2109070F20ED"
+    },
+    {
+      "payload": "result=\"NOERR\",msg=\"CMD_GET_SVRTIME\",rqid=1,date=0",
+      "encrypted": "AD31068DDE6ADED73E4C5B8CE0130DBB2D6819C19337F51825A58BEFDC91A2BFBC48781ABE2365D4B20488F9138A5447595681E1D7E184E110F4D41FFA086F7B"
+    },
+    {
+      "payload": "result=\"NOERR\",msg=\"MSG_CHALLENGE\",rqid=4,ccode=\"00112233445566778899aabbccddeeff\"",
+      "encrypted": "51366F468F513E333E4C5B8CE0130DBB2D6819C19337F51855495BAD75A38001F52CBBE32AD7E54D96C409CD09EDDD1FB2F29A5BF8320DECB851C53144D65735ABA7427F194174929D7ADB6029FC2A0FFC8A763933632012BDB6381F91FF2F45"
+    }
+  ],
+  "packets": [
+    {
+      "packetId": 96,
+      "count": 1,
+      "body": "",
+      "wire": "5BFF2E645B9F2E650BC8BB97C780897FC23209D0243897DA"
+    },
+    {
+      "packetId": 96,
+      "count": 2,
+      "body": "0001020304050607",
+      "wire": "5BFF2E6C5B9F2E66EA03BB7523325D58883B0D56CA7460F85B9E2C675F9A2863"
+    },
+    {
+      "packetId": 96,
+      "count": 7,
+      "body": "68656C6C6F20776F726C6421",
+      "wire": "5BFF2E685B9F2E638C5A107B556FD2C226D2F1C5109D3B4C33FA420834BF590B29F34A45"
+    },
+    {
+      "packetId": 96,
+      "count": 9,
+      "body": "AD31068DDE6ADED73E4C5B8CE0130DBB2D6819C19337F51825A58BEFDC91A2BFBC48781ABE2365D4B20488F9138A5447595681E1D7E184E110F4D41FFA086F7B",
+      "wire": "5BFF2E245B9F2E6D041A080B3ECE23D685F73388C79037A5F6AE28E985F5F0B365D375E8BB8C23DF76F737A5C8A8DB7C7E3AA58B870E8CDBE7D7567EE5BC4BB0E99BA69D48157A2302C9AF858C7EAA854B6BFA7BA197411F"
+    }
+  ],
+  "responses": [
+    {
+      "msg": "CMD_GET_SVRLIST",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"CMD_GET_SVRLIST\",rqid=4,server_num=6,svrlist=[{svrtype=\"GATE\",svrname=\"Gate\",svrport=28010,svraddr=\"127.0.0.1\",max_player_num=1000,player_num=0,svrgid=1},{svrtype=\"FDLOBBY\",svrname=\"FDLobby\",svrport=28010,svraddr=\"127.0.0.1\",max_player_num=1000,player_num=0,svrgid=2},{svrtype=\"LOBBY\",svrname=\"Lobby\",svrport=28010,svraddr=\"127.0.0.1\",max_player_num=1000,player_num=0,svrgid=3},{svrtype=\"MENU\",svrname=\"Menu\",svrport=28010,svraddr=\"127.0.0.1\",max_player_num=1000,player_num=0,svrgid=4},{svrtype=\"ACCOUNT\",svrname=\"Account\",svrport=28010,svraddr=\"127.0.0.1\",max_player_num=1000,player_num=0,svrgid=5},{svrtype=\"VDPCHAT\",svrname=\"VdpChat\",svrport=28010,svraddr=\"127.0.0.1\",max_player_num=1000,player_num=0,svrgid=6}]\u0000"
+    },
+    {
+      "msg": "CMD_GET_SVRVERSION",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"CMD_GET_SVRVERSION\",rqid=4,version=\"1.0\",patch_version=\"1.0\",dlc_version=\"1.0\",eula_version=\"1.0\"\u0000"
+    },
+    {
+      "msg": "CMD_GET_INFORMATIONLIST",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"CMD_GET_INFORMATIONLIST\",rqid=4,info_num=1,ilist=[{date=0,info_id=1,mes_subject=\"Test\",mes_body=\"Hello\",important=\"0\",present=\"0\"}]\u0000"
+    },
+    {
+      "msg": "CMD_GET_PLAYERLIST",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"CMD_GET_PLAYERLIST\",rqid=4,player_count=1,player_data=[{pid=1,date=0,point=12345,name=\"Local Player\",match_num=37,division=\"D3C\",rating=742}]\u0000"
+    },
+    {
+      "msg": "CMD_GET_PLAYERINFO",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"CMD_GET_PLAYERINFO\",rqid=4,name=\"Local Player\",div=\"D3C\",match_num=37,win_num=21,lose_num=9,draw_num=7,contWin_num=5,contWinMax_num=8,disconnect_num=2,disconWin_num=1,disconLose_num=1,birthmonth=9,birthday=12,country=50,area=0,favoriteTeam=5,favoritePlayer=4618,intro=\"PLAYERINFO FIELD TEST\",kind=\"NORMAL\",rating=742,manner=3,point=12345,goal=84,lostGoal=42,rank=321,lang=\"EN\",enable_chat=\"YES\",teamLog[0]=5,teamLog[1]=0,teamLog[2]=0,teamLog[3]=0,teamLog[4]=0,total_combination=18,max_combination=4,dlcontent=\"1.00\",patch_version=\"1.00\",selfreport_level=\"PRO\",automatch_want=\"YES\",beginnermark=\"YES\",position_want=\"CF\",desired_position[0]=\"YES\",desired_position[1]=\"NO\",desired_position[2]=\"NO\",desired_position[3]=\"YES\",desired_position[4]=\"NO\",desired_position[5]=\"NO\",desired_position[6]=\"NO\",desired_position[7]=\"YES\",desired_position[8]=\"NO\",desired_position[9]=\"NO\",desired_position[10]=\"NO\",desired_position[11]=\"NO\",desired_position[12]=\"NO\",list_num=0\u0000"
+    },
+    {
+      "msg": "CMD_GET_PRIVATEINFO",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"CMD_GET_PRIVATEINFO\",rqid=4,count=0\u0000"
+    },
+    {
+      "msg": "CMD_SET_CURRENTPLAYER",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"CMD_SET_CURRENTPLAYER\",rqid=4,useable_team_size=0,mailcount=0,newmail=\"NO\",chat_probi=\"NO\",camera_probi=\"NO\",voice_probi=\"NO\",band_probi=\"NO\",first_login=\"YES\"\u0000"
+    },
+    {
+      "msg": "CMD_GET_BLOCKLIST",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"CMD_GET_BLOCKLIST\",rqid=4,count=1,bklist=[{name=\"Beginner\",player_num=0,max_player_num=100}]\u0000"
+    },
+    {
+      "msg": "CMD_CREATEJOIN_ROOM",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"CMD_CREATEJOIN_ROOM\",rqid=4,room_id=123\u0000"
+    },
+    {
+      "msg": "CMD_GET_URLLIST",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"CMD_GET_URLLIST\",rqid=4,url_num=4,ulist=[{type=\"PC_SPEC\",url=\"http://127.0.0.1/pcspec.bin\",version=1,file_size=1,md5=0},{type=\"KONAMIID\",url=\"https://id.konami.net/\",version=1,file_size=0,md5=0},{type=\"GAMEID_AUTH\",url=\"http://127.0.0.1/gameid_auth\",version=1,file_size=3,md5=0},{type=\"EULA_PES\",url=\"http://127.0.0.1/eula_pes.txt\",version=1,file_size=2,md5=0}]\u0000"
+    },
+    {
+      "msg": "CMD_GET_EULA",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"CMD_GET_EULA\",rqid=4,eula=\"1\"\u0000"
+    },
+    {
+      "msg": "MSG_SOMETHING_UNKNOWN",
+      "rqid": 4,
+      "text": "result=\"NOERR\",msg=\"MSG_SOMETHING_UNKNOWN\",rqid=4\u0000"
+    }
+  ]
+}
