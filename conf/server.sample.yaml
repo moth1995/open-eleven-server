@@ -133,7 +133,14 @@ Server:
 
   Debug:
     # Packet logging. Verbose by design — this is a reverse-engineering server.
-    HexDump: true               # hex + ASCII for HTTP bodies and game packets
+    # Hex + ASCII of each packet's data, both directions, including binary packets
+    # that carry no readable payload.
+    HexDump: true
+    # Bytes dumped per packet before truncating; 0 removes the cap. A room list runs
+    # past a kilobyte, which is ~75 lines of hex and buries everything around it.
+    HexDumpMaxBytes: 320
+    # Render key=value payloads as an indented tree instead of one long line.
+    PrettyPrintPayloads: true
     LogUnknownCommands: true
     LogOutboundPayloads: true
 

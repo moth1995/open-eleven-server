@@ -140,7 +140,8 @@ Keys worth knowing:
 | `Protocol.EnforceSessionState` | Rejects commands that arrive before their stage instead of running them against half-initialised state. |
 | `Protocol.EmitUnconfirmedMessages` | Messages whose names are inferred rather than captured. Off by default: an unexpected message can crash the client. |
 | `Database.Provider` | `Sqlite` for a zero-infrastructure dev run, `MySql` for deployment. |
-| `Debug.HexDump` | Full request/response payload logging, on by default for RE work. |
+| `Debug.HexDump` | Hex + ASCII of every packet's data, both directions, including binary packets. On by default for RE work. `Debug.HexDumpMaxBytes` caps it per packet (0 = uncapped). |
+| `Debug.PrettyPrintPayloads` | Renders key=value payloads as an indented tree instead of one long line. Turn off to get the raw wire text back. |
 
 ## Architecture
 

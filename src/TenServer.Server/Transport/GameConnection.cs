@@ -178,9 +178,13 @@ public sealed class GameConnection(
 
         if (!frame.IsTextCommand)
         {
-            logger.LogDebug(
-                "Binary packet id=0x{Id:X4} count={Count} length={Length} from {Session}",
-                frame.Id, frame.Count, frame.Data.Length, session);
+            // Logged at Information, not Debug: at the default level these packets were
+            // invisible, which made a client that sent nothing else look like a client
+            // that sent nothing at all.
+            logger.LogInformation(
+                "IN  binary id=0x{Id:X4} count={Count} length={Length} from {Session}\n{Body}",
+                frame.Id, frame.Count, frame.Data.Length, session,
+                PacketLogFormatter.FormatBinary(frame.Data, debug));
 
             if (options.CurrentValue.Protocol.AckBinaryPackets)
                 session.PushAck(frame.Id);
@@ -199,13 +203,10 @@ public sealed class GameConnection(
             return;
         }
 
-        if (debug.HexDump)
-            logger.LogInformation(
-                "IN  {Msg} rqid={Rqid} count={Count} from {Session}\n{Payload}",
-                request.MsgName, request.Rqid, frame.Count, session, payload);
-        else
-            logger.LogInformation(
-                "IN  {Msg} rqid={Rqid} from {Session}", request.MsgName, request.Rqid, session);
+        logger.LogInformation(
+            "IN  {Msg} rqid={Rqid} count={Count} from {Session}\n{Payload}",
+            request.MsgName, request.Rqid, frame.Count, session,
+            PacketLogFormatter.Format(request, payload, debug));
 
         await dispatcher.DispatchAsync(session, request, ct);
     }
@@ -224,10 +225,12 @@ public sealed class GameConnection(
                     var text = codecs.Writer.Write(message);
                     body = codecs.Blowfish.Encrypt(InnerBody.Wrap(text));
 
-                    if (options.CurrentValue.Debug.LogOutboundPayloads)
+                    var debug = options.CurrentValue.Debug;
+                    if (debug.LogOutboundPayloads)
                         logger.LogInformation(
                             "OUT {Msg} rqid={Rqid} to {Session}\n{Payload}",
-                            message.MsgName, message.Rqid, session, text.TrimEnd('\0'));
+                            message.MsgName, message.Rqid, session,
+                            PacketLogFormatter.Format(message, text.TrimEnd('\0'), debug));
                     else
                         logger.LogInformation(
                             "OUT {Msg} rqid={Rqid} to {Session}",

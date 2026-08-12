@@ -205,7 +205,23 @@ public sealed class ProtocolOptions
 
 public sealed class DebugOptions
 {
+    /// <summary>
+    /// Hex + ASCII dump of each packet's data section, on both directions and including
+    /// binary packets, which carry no readable payload and are otherwise invisible.
+    /// </summary>
     public bool HexDump { get; set; } = true;
+
+    /// <summary>
+    /// Cap on dumped bytes per packet. 0 removes the cap. A room list runs past a
+    /// kilobyte and would otherwise bury everything around it.
+    /// </summary>
+    public int HexDumpMaxBytes { get; set; } = 320;
+
+    /// <summary>
+    /// Render key=value payloads as an indented tree rather than one long line.
+    /// </summary>
+    public bool PrettyPrintPayloads { get; set; } = true;
+
     public bool LogUnknownCommands { get; set; } = true;
     public bool LogOutboundPayloads { get; set; } = true;
 }
