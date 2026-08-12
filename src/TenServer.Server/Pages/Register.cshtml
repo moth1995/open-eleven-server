@@ -1,0 +1,62 @@
+@page "/register"
+@model RegisterModel
+@{
+    Layout = null;
+}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Create an account</title>
+    <link rel="stylesheet" href="/css/register.css">
+</head>
+<body>
+<main class="card">
+    <h1>Create an account</h1>
+    <p class="sub">PES 2010 online server</p>
+
+    @if (Model.Created is { Length: > 0 })
+    {
+        <p class="msg ok" role="status">
+            Account &ldquo;@Model.Created&rdquo; created. You can log in from the game now.
+        </p>
+    }
+
+    @if (Model.Error is { Length: > 0 })
+    {
+        <p class="msg error" role="alert">@Model.Error</p>
+    }
+
+    <form method="post" autocomplete="off">
+        <label asp-for="GameId">
+            Game ID
+            <span class="hint">The username you type in the game.</span>
+        </label>
+        <input asp-for="GameId" maxlength="@RegistrationEndpoint.MaxGameIdLength" required autofocus>
+
+        <label asp-for="Password">
+            Password
+            <span class="hint">
+                Printable ASCII only, at most @RegistrationEndpoint.MaxPasswordLength characters
+                &mdash; the game cannot reproduce anything wider.
+            </span>
+        </label>
+        <input asp-for="Password" type="password"
+               maxlength="@RegistrationEndpoint.MaxPasswordLength" required>
+
+        <label asp-for="Confirm">Confirm password</label>
+        <input asp-for="Confirm" type="password"
+               maxlength="@RegistrationEndpoint.MaxPasswordLength" required>
+
+        <label asp-for="RegCode">
+            Serial
+            <span class="hint">The product serial the game was installed with.</span>
+        </label>
+        <input asp-for="RegCode" maxlength="@RegistrationEndpoint.MaxRegCodeLength" required>
+
+        <button type="submit">Create account</button>
+    </form>
+</main>
+</body>
+</html>
