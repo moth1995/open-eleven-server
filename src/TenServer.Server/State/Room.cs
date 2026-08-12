@@ -31,6 +31,9 @@ public sealed class Room
     public ServiceRole ServiceRole { get; }
     public int BlockId { get; }
     public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+    public string Status { get; private set; } = "WAITING";
+
+    public bool IsStartable => Status is "WAITING" or "SETENV";
 
     /// <summary>
     /// Match settings from CMD_SET_GAMEENV (half length, injuries, ball, substitutions).
@@ -89,8 +92,19 @@ public sealed class Room
             session.GameEntryNo = -1;
             session.GameSide = -1;
             session.GameEntryWatchRqid = null;
+            session.RoomStateWatchRqid = null;
             return new RoomRemoval(true, ownerChanged, _members.ToArray());
         }
+    }
+
+    public bool TrySetStatus(string status)
+    {
+        if (status is not ("WAITING" or "SETENV" or "GAME" or "RESULT" or
+            "DISCONWAIT" or "RESULTWAIT"))
+            return false;
+
+        Status = status;
+        return true;
     }
 
     public bool SetGameEntry(Session session, bool entered, int side)

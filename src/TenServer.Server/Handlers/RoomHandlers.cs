@@ -169,6 +169,50 @@ public sealed class RoomHandlers(
     public ValueTask<KvMessage[]> WatchEntryGame(CommandContext ctx)
     {
         ctx.Session.GameEntryWatchRqid = ctx.Rqid;
+        if (ctx.Session.RoomId is { } roomId && ctx.Hub.FindRoom(roomId) is { } room)
+            ctx.Hub.PublishGameEntryChanged(room);
+        return Reply.None();
+    }
+
+    [Command("CMD_WATCH_ROOMSTATE", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> WatchRoomState(CommandContext ctx)
+    {
+        ctx.Session.RoomStateWatchRqid = ctx.Rqid;
+        if (ctx.Session.RoomId is { } roomId && ctx.Hub.FindRoom(roomId) is { } room)
+            ctx.Hub.PublishRoomStateChanged(room);
+        return Reply.None();
+    }
+
+    [Command("CMD_UPDATE_ROOMSTATE", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> UpdateRoomState(CommandContext ctx)
+    {
+        var room = ctx.Session.RoomId is { } roomId ? ctx.Hub.FindRoom(roomId) : null;
+        if (room is null)
+            return Reply.Of(ctx.Fail("ERR_ROOMNOTFOUND"));
+
+        var status = ctx.Request.GetString("status") ?? "";
+        if (!room.TrySetStatus(status))
+        {
+            log.LogWarning(
+                "Invalid CMD_UPDATE_ROOMSTATE from pid {Pid}: status={Status}",
+                ctx.Session.Pid,
+                status);
+            return Reply.Of(ctx.Fail("ERR_INVALIDROOMINFO"));
+        }
+
+        // Complete CMD_UPDATE_ROOMSTATE before satisfying the sender's parked watch.
+        if (!ctx.Session.Push(ctx.Ok()))
+            log.LogWarning(
+                "Outbound queue full; dropped CMD_UPDATE_ROOMSTATE ACK for {Session}",
+                ctx.Session);
+
+        ctx.Hub.PublishRoomStateChanged(room);
+        ctx.Hub.PublishRoomUpdated(room, ctx.Session.Id);
+        log.LogInformation(
+            "Room {RoomId} state changed to {Status} by pid {Pid}",
+            room.Id,
+            room.Status,
+            ctx.Session.Pid);
         return Reply.None();
     }
 

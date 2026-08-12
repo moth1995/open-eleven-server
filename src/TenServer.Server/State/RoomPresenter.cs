@@ -16,7 +16,7 @@ public static class RoomPresenter
         var entry = new KvMessage()
             .Set("match_type", EmptyAs(room.MatchType, "OC_FREE"))
             .Set("room_id", room.Id)
-            .Set("status", "WAITING")
+            .Set("status", room.Status)
             .Set("game_phase", "ENTRY")
             .Set("name", room.Name);
 

@@ -63,6 +63,7 @@ public sealed class Session
     public int GameEntryNo { get; set; } = -1;
     public int GameSide { get; set; } = -1;
     public int? GameEntryWatchRqid { get; set; }
+    public int? RoomStateWatchRqid { get; set; }
     public bool RoomListSubscribed { get; set; }
 
     /// <summary>Endpoints learned from CMD_JOIN_BLOCK; the peers need them for P2P setup.</summary>

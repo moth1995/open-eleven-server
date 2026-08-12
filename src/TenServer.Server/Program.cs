@@ -22,6 +22,7 @@ builder.Configuration
     .AddEnvironmentVariables("TENSERVER_");
 
 builder.Services.AddTenServerCore(builder.Configuration);
+builder.Services.AddHostedService<RoomWatchPublisher>();
 
 // Serves the registration form at /register. Razor Pages ships in the shared framework,
 // so this needs no package reference.

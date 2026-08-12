@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using TenServer.Protocol.Kv;
 using TenServer.Server.Configuration;
 
@@ -11,10 +10,8 @@ namespace TenServer.Server.State;
 /// the rooms they occupy. Registered as a singleton and holds no scoped dependency,
 /// which is why sessions are plain objects rather than DI-resolved services.
 /// </summary>
-public sealed class Hub(ILogger<Hub> log, IOptions<ServerOptions> options)
+public sealed class Hub(ILogger<Hub> log)
 {
-    private ProtocolOptions Protocol => options.Value.Protocol;
-
     private readonly ConcurrentDictionary<Guid, Session> _sessions = new();
     private readonly ConcurrentDictionary<int, Room> _rooms = new();
     private int _nextRoomId;
@@ -245,6 +242,7 @@ public sealed class Hub(ILogger<Hub> log, IOptions<ServerOptions> options)
 
         session.RoomId = null;
         session.GameEntryWatchRqid = null;
+        session.RoomStateWatchRqid = null;
         if (session.State >= SessionState.InRoom)
             session.State = SessionState.InBlock;
 
@@ -260,6 +258,9 @@ public sealed class Hub(ILogger<Hub> log, IOptions<ServerOptions> options)
         foreach (var remaining in removal.RemainingMembers)
             remaining.Push(notice);
 
+        if (removal.OwnerChanged)
+            PublishRoomStateChanged(room, "OwnerChanged");
+
         PublishRoomUpdated(room, session.Id);
         return new RoomLeaveResult(RoomLeaveStatus.Left, roomId, false, removal.OwnerChanged);
     }
@@ -269,23 +270,10 @@ public sealed class Hub(ILogger<Hub> log, IOptions<ServerOptions> options)
         if (join is not { Status: RoomJoinStatus.Joined, Room: { } room })
             return;
 
-        // The room owner's Lobby connection closes on receiving this, reproducibly, in
-        // every two-player join traced so far. The payload itself checks out against
-        // FUN_00BB4D70: it parses these eight fields with the exact type codes the table
-        // declares, and FUN_00BB3AD0 keys on pid, which is non-zero. Whatever the client
-        // objects to is not visible in the message, so it stays behind the flag that the
-        // README already claims gates it. Turn it on to resume tracing this.
-        if (!Protocol.EmitUnconfirmedMessages)
-        {
-            log.LogDebug(
-                "MSG_ROOMINNOTICE for pid {Pid} into room {RoomId} suppressed " +
-                "(Protocol.EmitUnconfirmedMessages is off)",
-                member.Pid, room.Id);
-            PublishRoomUpdated(room, member.Id);
-            return;
-        }
-
-        // FUN_00BB4D70 consumes these exact fields for MSG_ROOMINNOTICE.
+        // FUN_00BB4D70 consumes these exact fields for MSG_ROOMINNOTICE. Earlier traces
+        // blamed this notice for the owner's disconnect, but a run with it suppressed
+        // reproduced the failure: the actual bad delivery was MSG_ROOMLISTUPDATE being
+        // sent to the owner after it had left the room-browser state.
         var notice = KvMessage.Ok("MSG_ROOMINNOTICE", UnsolicitedRqid)
             .Set("ex_ip", member.ExternalIp)
             .Set("ex_port", member.ExternalPort)
@@ -327,13 +315,39 @@ public sealed class Hub(ILogger<Hub> log, IOptions<ServerOptions> options)
             if (member.GameEntryWatchRqid is not { } rqid)
                 continue;
 
-            member.GameEntryWatchRqid = null;
             var update = KvMessage.Ok("CMD_WATCH_ENTRY_GAME", rqid)
                 .SetList("entry_count", "entrygame", entries);
             if (member.Push(update))
                 sent++;
         }
 
+        return sent;
+    }
+
+    public int PublishRoomStateChanged(Room room, string eventName = "StateChanged")
+    {
+        var sent = 0;
+        foreach (var member in room.Snapshot())
+        {
+            if (member.RoomStateWatchRqid is not { } rqid)
+                continue;
+
+            var update = KvMessage.Ok("CMD_WATCH_ROOMSTATE", rqid)
+                .Set("event", eventName)
+                .Set("owner_pid", room.OwnerPid)
+                .Set("state", room.Status);
+            if (member.Push(update))
+                sent++;
+        }
+
+        return sent;
+    }
+
+    public int PublishStartableGameEntrySnapshots()
+    {
+        var sent = 0;
+        foreach (var room in Rooms.Where(room => room.IsStartable))
+            sent += PublishGameEntryChanged(room);
         return sent;
     }
 
@@ -390,8 +404,11 @@ public sealed class Hub(ILogger<Hub> log, IOptions<ServerOptions> options)
     private int BroadcastToRoomListSubscribers(Room room, KvMessage message, Guid? except)
     {
         var sent = 0;
+        // The subscription flag survives screen changes, but this payload is consumed by
+        // the room-browser parser and disconnects clients that receive it while InRoom.
         foreach (var subscriber in _sessions.Values.Where(session =>
                      session.RoomListSubscribed
+                     && session.State == SessionState.InBlock
                      && session.Role == room.ServiceRole
                      && session.BlockId == room.BlockId))
         {
