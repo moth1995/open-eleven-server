@@ -13,7 +13,9 @@ logs/
 *.db-shm
 *.db-wal
 
-# Local configuration overrides (never committed: may hold credentials)
+# Real configuration is per machine and may hold addresses and credentials.
+# conf/server.sample.yaml is the tracked template; copy it to conf/server.yaml.
+conf/server.yaml
 conf/*.local.yaml
 
 # Python reference implementation and the scripts that read it. main.py is the

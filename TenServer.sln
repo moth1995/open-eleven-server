@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
+	ProjectSection(SolutionItems) = preProject
+		conf\server.sample.yaml = conf\server.sample.yaml
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TenServer.Protocol", "src\TenServer.Protocol\TenServer.Protocol.csproj", "{4DC5BDB0-054F-459B-A4B0-65CC6D451744}"
 EndProject
@@ -97,5 +100,8 @@ Global
 		{ED8F4851-3009-4AC2-8652-403FB724D5B5} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{5C919088-C39E-44B0-954A-C0F5B35892D5} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{3D477F7A-05B4-41C2-9B31-9C72FF958B6B} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {B64B40AA-A943-4E66-9C64-40CEBD618DB9}
 	EndGlobalSection
 EndGlobal

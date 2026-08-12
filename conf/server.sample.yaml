@@ -1,0 +1,144 @@
+# Sample configuration. Copy to conf/server.yaml and edit:
+#
+#     cp conf/server.sample.yaml conf/server.yaml
+#
+# conf/server.yaml is gitignored, so your machine's addresses, certificates and
+# database credentials stay out of the repository. Values here are defaults or
+# placeholders — the only one you must change is AdvertiseIp.
+#
+# Anything in this file can also be overridden by environment variables using a
+# TENSERVER_ prefix and __ for nesting, which is how the launch profiles work:
+#
+#     TENSERVER_Server__AdvertiseIp=192.168.1.20
+#     TENSERVER_Server__Database__Provider=MySql
+
+Server:
+  # Written into svraddr of every server-list entry, so it must be the address the
+  # game machine can reach this server on. "auto" resolves the primary outbound NIC.
+  # 127.0.0.1 only works when the game runs on this same machine. Getting this wrong
+  # is the most common misconfiguration: the client connects to the gate, is handed
+  # this address for every other service, and then silently fails to reach them.
+  AdvertiseIp: "auto"
+
+  # Reserved for per-title behaviour switches. Nothing reads it yet.
+  GameProfile: Default
+
+  Listen:
+    Host: 0.0.0.0
+    # Ports below 1024 need elevation on Windows. For a non-elevated dev run use
+    # 8080/8443 here, or the "dev ports" launch profile.
+    Http: 80
+    Https: 443
+    Backlog: 128
+    IdleTimeoutSeconds: 300
+
+  # One TCP listener per logical service. Only the gate port is fixed: the client
+  # hardcodes it. Every other port is discovered from the svrlist the gate returns,
+  # so these may be moved freely to separate traffic per stage.
+  Services:
+    - Role: Gate
+      Name: Gate
+      Gid: 1
+      Port: 28010          # fixed — the client will not look this up
+      MaxPlayers: 1000
+    - Role: FdLobby
+      Name: FdLobby
+      Gid: 2
+      Port: 28011
+      MaxPlayers: 1000
+    - Role: Lobby
+      Name: TenServer      # shown to players as the server name
+      Gid: 3
+      Port: 28012
+      MaxPlayers: 1000
+    - Role: Menu
+      Name: Menu
+      Gid: 4
+      Port: 28013
+      MaxPlayers: 1000
+    - Role: Account
+      Name: Account
+      Gid: 5
+      Port: 28014
+      MaxPlayers: 1000
+    - Role: VdpChat
+      Name: VdpChat
+      Gid: 6
+      Port: 28015
+      MaxPlayers: 1000
+
+  # Blocks offered by CMD_GET_BLOCKLIST. Maximum 10; the server refuses to start with
+  # more. The client joins one by its POSITION in this list (CMD_JOIN_BLOCK sends
+  # index=N), so reordering entries changes what an already running client selects.
+  # Set Id explicitly to keep occupancy bookkeeping stable across a reorder; left at 0
+  # it is assigned from the position.
+  Lobbies:
+    - Name: Beginner
+      MaxPlayers: 100
+      Type: open
+    - Name: Standard
+      MaxPlayers: 100
+      Type: open
+    - Name: Expert
+      MaxPlayers: 100
+      Type: open
+
+  Crypto:
+    # Not secrets: these live in the game client and every copy already has them.
+    # They are per title, so swapping titles means swapping both values and setting
+    # GameProfile to match. The values below are the PES2010 PC ones.
+    XorKey: "5B9F2E64"
+    BlowfishKey: "D8890AF066C96B40D701AEFC436FF9FEC98998167A74483D3914730C5C01C03CE28E86E589C4A185F8540651D2ECA36B5C1A40EEC5E9DAAE"
+
+  Https:
+    Enabled: true
+    # Leave empty to skip port 443 entirely. There is no plaintext fallback: with a
+    # path set but unreadable, HTTPS does not start.
+    CertificatePath: ""
+    CertificatePassword: ""
+
+  Database:
+    Provider: Sqlite            # Sqlite | MySql
+    # SQLite needs no setup and is created and seeded on first run. For MySQL use:
+    #   ConnectionString: "Server=localhost;Port=3306;Database=tenserver;User=…;Password=…"
+    # Put real credentials in conf/server.local.yaml (also gitignored) rather than here.
+    ConnectionString: "Data Source=data/tenserver.db"
+    AutoCreate: true
+    Seed: true
+
+  Protocol:
+    RequireEulaBeforeServerList: false
+    # Fixed challenge: the handshake is stubbed and accepts any credential.
+    ChallengeCode: "00112233445566778899aabbccddeeff"
+    PendingLoginLifetimeSeconds: 300
+    PlayerSearchLimit: 100
+    # Substrings refused in player-supplied text (names, room names, chat).
+    BlockedTerms: []
+    ServerVersion: "1.0"
+    PatchVersion: "1.03"
+    DlcVersion: "1.07"
+    EulaVersion: "1.0"
+    AckUnknownCommands: true
+    AckBinaryPackets: true
+    EnforceSessionState: true
+    # Per-service command declarations are logged but not refused until captures
+    # confirm which command belongs on which port.
+    EnforceServiceRoles: false
+    # Unsafe behind NAT because IP alone is not an identity. Captured clients repeat
+    # MSG_REQCCODE/MSG_REQAUTH on service connections, so keep this disabled.
+    ShareIdentityByRemoteAddress: false
+    # Currently gates MSG_ROOMINNOTICE only. Off by default: it reproducibly closes
+    # the receiving client's Lobby connection and the cause is not yet understood.
+    EmitUnconfirmedMessages: false
+
+  Debug:
+    # Packet logging. Verbose by design — this is a reverse-engineering server.
+    HexDump: true               # hex + ASCII for HTTP bodies and game packets
+    LogUnknownCommands: true
+    LogOutboundPayloads: true
+
+Logging:
+  LogLevel:
+    Default: Information
+    Microsoft.AspNetCore: Warning
+    Microsoft.EntityFrameworkCore: Warning
