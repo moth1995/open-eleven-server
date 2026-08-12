@@ -27,6 +27,20 @@ The golden vectors those tools produce *are* tracked, at
 
 ## Run
 
+### Configuration
+
+`conf/server.yaml` is gitignored — it holds the advertised address, certificate paths
+and database credentials, which are per machine. Copy the tracked template first:
+
+```bash
+cp conf/server.sample.yaml conf/server.yaml
+```
+
+Then set **`AdvertiseIp`** to the address the game machine can reach this server on.
+Everything else has a working default. Building without a `conf/server.yaml` falls back
+to the template, so a fresh clone still builds and runs — but it will advertise `auto`,
+which is only right when the resolved NIC is the one the client can see.
+
 ### Visual Studio
 
 Set **TenServer.Server** as the startup project (right-click → Set as Startup Project) and
