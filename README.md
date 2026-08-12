@@ -1,0 +1,323 @@
+# PES2010 PC Server
+
+Reverse-engineered online server for Pro Evolution Soccer 2010 (PC). C# / .NET 9.
+
+`main.py` is the original single-file reference implementation. It is kept **read-only**:
+the tooling imports it to generate wire-format golden vectors and to build probe packets,
+so the C# server is checked against the exact bytes the Python one produced.
+
+## Layout
+
+```
+src/
+  Pes2010.Protocol/     XOR cipher, Blowfish-ECB, packet framing, key=value grammar codec
+  Pes2010.Data/         EF Core entities, DbContext, repositories, seeding
+  Pes2010.Server/       Host, per-service TCP listeners, dispatch, handlers, HTTP surface
+tests/
+  Pes2010.Protocol.Tests/   Codec round-trips + byte-for-byte goldens from main.py
+  Pes2010.Server.Tests/     Handler behaviour + reference parity through the real DI stack
+tools/
+  generate_goldens.py   Regenerates the golden vectors from main.py
+  probe_client.py       Sends commands to a running server using main.py's own codecs
+conf/server.yaml        All configuration
+docker/                 Dockerfile + compose (server + MySQL + Adminer)
+main.py                 Reference implementation — read only, never edited
+```
+
+## Run
+
+### Visual Studio
+
+Set **Pes2010.Server** as the startup project (right-click → Set as Startup Project) and
+press F5. Pick a profile from the dropdown next to the play button:
+
+| Profile | HTTP / HTTPS | `AdvertiseIp` | Notes |
+|---|---|---|---|
+| **Server (game ports, loopback)** | 80 / 443 | 127.0.0.1 | Default. Game and server on one machine. **Run VS as administrator.** |
+| Server (game ports) | 80 / 443 | auto | Game on another machine on the LAN. Needs administrator. |
+| Server (game ports + MySQL) | 80 / 443 | auto | Same, against a local MySQL instead of SQLite. |
+| Server (dev ports, no elevation) | 8080 / 8443 | 127.0.0.1 | Protocol work without an elevated VS. |
+
+Game ports (28010–28015) never need elevation — only 80 and 443 do, and the real client
+insists on them. **The client will not get past discovery unless HTTP is reachable**: it
+closes the gate connection after `CMD_GET_URLLIST`, fetches the EULA and posts to
+`/gameid_auth`, and only then continues. If nothing answers on the advertised HTTP port
+the sequence stops there with no error on the wire.
+
+The dev-ports profile stays usable for protocol work because `CMD_GET_URLLIST` advertises
+whatever port is configured (`http://host:8080/...` when HTTP is not on 80; port 80 stays
+implicit, keeping the payload identical to the reference server). Whether the client
+accepts an explicit port in those URLs is unconfirmed — use a game-ports profile when
+driving the real game.
+
+Profiles are in `src/Pes2010.Server/Properties/launchSettings.json`; they set only
+`PES2010_`-prefixed environment variables, so they layer over `conf/server.yaml` without
+duplicating it.
+
+### Command line
+
+```bash
+dotnet run --project src/Pes2010.Server
+dotnet run --project src/Pes2010.Server -- --config conf/server.yaml   # explicit config
+dotnet test                                                            # 60 tests
+```
+
+With no `--config`, the server loads `conf/server.yaml` from next to the binary. The SQLite
+file is anchored to the application directory too, so F5, `dotnet run` and the container
+all use the same database rather than one per working directory.
+
+For persistent local overrides, copy `conf/server.yaml` to `conf/server.local.yaml`; it is
+loaded on top of the main file and is git-ignored.
+
+Probe a running server with packets built by the reference implementation:
+
+```bash
+python tools/probe_client.py --port 28010 CMD_GET_SVRLIST
+python tools/probe_client.py --port 28014 --expect 2 MSG_REQCCODE MSG_REQAUTH
+```
+
+## Service ports
+
+Each logical service now has its own listener, so traffic can be read per stage.
+
+| Service  | gid | Port  | Fixed? |
+|----------|-----|-------|--------|
+| Gate     | 1   | 28010 | **Yes** — the client hardcodes it |
+| FdLobby  | 2   | 28011 | No |
+| Lobby    | 3   | 28012 | No |
+| Menu     | 4   | 28013 | No |
+| Account  | 5   | 28014 | No |
+| VdpChat  | 6   | 28015 | No |
+
+Everything except the gate is discovered from the `svrlist` payload the gate returns, so
+those ports can be changed freely in `conf/server.yaml`. `svrgid` keys the client's
+internal service table and must stay stable even when ports move.
+
+Two consequences of the split, both handled in code:
+
+- **Identity sharing.** The client opens one socket per service and does not repeat the
+  login handshake on each. A new connection inherits pid, name and login progression from
+  an authenticated session on the same remote address
+  (`Protocol.ShareIdentityByRemoteAddress`). Room and match membership are never inherited.
+- **Advisory service roles.** Each command declares which services it belongs to, but a
+  command arriving elsewhere is logged rather than refused, because the reference server
+  answered everything on one port. Set `Protocol.EnforceServiceRoles: true` once captures
+  confirm the mapping.
+
+## Configuration
+
+`conf/server.yaml`, overridable by `conf/server.local.yaml` and then by environment
+variables using a `PES2010_` prefix and `__` for nesting:
+
+```bash
+PES2010_Server__AdvertiseIp=192.168.1.20
+PES2010_Server__Database__Provider=MySql
+```
+
+Keys worth knowing:
+
+| Key | Why it matters |
+|---|---|
+| `AdvertiseIp` | Written into every `svraddr`. `auto` resolves the primary NIC. A wrong value sends the client somewhere unreachable — this is the most common misconfiguration. |
+| `Lobbies` | The blocks offered by `CMD_GET_BLOCKLIST`, **maximum 10**. The client joins one by its **position** in this list, so reordering changes what a running client selects; set `Id` explicitly to keep occupancy bookkeeping stable across a reorder. |
+| `Protocol.RequireRegisteredAccount` | Refuse a client that matches no registered account. A client that does match always has its serial checked regardless. |
+| `Crypto.XorKey` / `BlowfishKey` | Per-game-title keys. Swap both for PES2008. |
+| `Protocol.EnforceSessionState` | Rejects commands that arrive before their stage instead of running them against half-initialised state. |
+| `Protocol.EmitUnconfirmedMessages` | Messages whose names are inferred rather than captured. Off by default: an unexpected message can crash the client. |
+| `Database.Provider` | `Sqlite` for a zero-infrastructure dev run, `MySql` for deployment. |
+| `Debug.HexDump` | Full request/response payload logging, on by default for RE work. |
+
+## Architecture
+
+```
+TCP :2801x ──► GameListener (one per service, BackgroundService)
+                   │ accept
+                   ▼
+              GameConnection ── owns ─► Session (per-connection state)
+                   │
+                   │  XorCipher → PacketCodec → BlowfishEcb → KvReader
+                   ▼
+              CommandDispatcher ──► CommandRegistry.TryGet(msg)
+                   │                 role check, session-state check
+                   ▼
+              [Command] handler method (scoped, gets repositories)
+                   │
+                   ├─ returns KvMessage[]   → the caller's channel
+                   └─ Hub.BroadcastToRoom() → other sessions' channels
+                   ▼
+              writer loop: KvWriter → InnerBody → Blowfish → PacketCodec → Xor → socket
+```
+
+Reader and writer are separate loops over a `Channel<OutboundPacket>`, which is what lets
+any handler on any connection push a packet to any other session — the prerequisite for
+rooms, chat and match offers.
+
+### DI lifetimes
+
+| Type | Lifetime | Why |
+|---|---|---|
+| `Hub` | Singleton | The one global state store: all sessions and rooms. |
+| `CommandRegistry` | Singleton | Built once by assembly scan, immutable after; dispatch uses compiled delegates. |
+| `XorCipher`, `BlowfishEcb`, `PacketCodec`, `KvReader`, `KvWriter`, `ProtocolCodecs` | Singleton | Stateless; injected rather than static so tests can swap keys. |
+| `ServerCatalog`, `WebAssets` | Singleton | Derived from config at startup. |
+| `IOptionsMonitor<ServerOptions>` | Singleton | Config with live reload on YAML change. |
+| `GameListener` (one per service) | Singleton `BackgroundService` | Owns a port. |
+| `Session` | Per connection, **not** in DI | Owned by the connection so nothing can capture it in a singleton. |
+| `GameDbContext`, repositories, handlers | Scoped | One DI scope per dispatched command — a connection can live for hours, a `DbContext` must not. |
+
+A singleton never depends on a scoped service: `Hub` holds `Session` POCOs, and handlers
+get their repositories per dispatch.
+
+## Adding a command
+
+Add a method. Nothing in the dispatch core changes.
+
+```csharp
+[Command("CMD_GET_SOMETHING", Roles = ServiceRole.Lobby,
+         RequiredState = SessionState.Authenticated)]
+public async ValueTask<KvMessage[]> GetSomething(CommandContext ctx)
+{
+    var rows = await _repository.GetRowsAsync(ctx.CancellationToken);
+    return [ctx.Ok().SetList("count", "list", rows.Select(Present).ToArray())];
+}
+```
+
+Return several messages for a START/DATA/END sequence — they are one logical response, so
+they are one handler. Always write lists with `SetList`, which emits the count field and
+the list together: a count that disagrees with its list is a documented way to crash the
+client, and this is the only supported way to write one.
+
+## Commands with no handler yet
+
+Anything unrecognised gets a bare acknowledgement — `result="NOERR",msg=<same>,rqid=<same>`
+— which is correct for commands that only need confirmation and is enough to keep the
+client moving past most gaps. Each occurrence is logged, and a ranked summary is printed at
+shutdown:
+
+```
+3 command(s) had no handler this session:
+  CMD_GET_PLAYERNUMBERS   Menu   x14   first seen in InBlock   rqid=9,svrtype=MENU,...
+  CMD_GET_FRIENDLIST      Menu   x6    first seen in InBlock   rqid=6,target_pid=1,...
+```
+
+A high count means the client keeps re-asking, which usually means the ack was not what it
+wanted — list queries in particular need a `count` field, and a reply without one leaves the
+client reading an uninitialised value. To find the right shape, locate the command's string
+in `pes2010.exe` `.rdata`, follow the xref to its parser, and read which keys it looks up.
+Then add a `[Command]` method for it.
+
+## Account registration
+
+The game has no registration flow, so accounts are created out of band.
+
+**In a browser:** open `http://<server>/register` — a Razor page
+(`src/Pes2010.Server/Pages/Register.cshtml`, styled by `wwwroot/css/register.css`). It asks
+for the Game ID, a password twice, and the serial, then posts a plain form and hashes the
+password server-side. No JavaScript at all, and nothing loaded off this machine — the game
+box has no internet route through this server.
+
+Passwords are restricted to **printable ASCII, at most 32 characters**. The digest has to be
+byte-identical to what the game computes from the same typed password, and we do not know
+which encoding it uses; inside 0x20–0x7E every candidate encoding agrees, so the question
+never arises. Accepting anything wider would create accounts that register cleanly and can
+never log in.
+
+**From a script:**
+
+```bash
+curl -X POST http://localhost/api/register \
+  -H 'Content-Type: application/json' \
+  -d '{"gameId":"marcos","passwordHash":"86d84f97...","regCode":"5HRVLVRUF75RMV2LRK45"}'
+```
+
+```
+201  {"id":2,"gameId":"marcos","regCode":"5HRVLVRUF75RMV2LRK45"}
+409  {"error":"That gameId is already registered."}
+400  {"error":"passwordHash must contain exactly 32 hexadecimal characters."}
+```
+
+The API takes a digest, not a password: `passwordHash` is stored exactly as supplied and
+compared, never reversed. Hash with the same convention the client uses —
+`AuthProof.HashPassword` is that convention, and the form goes through it.
+
+The form and the API are separate routes because one path cannot serve two POST handlers;
+both converge on `RegistrationService`, so validation and error wording cannot drift.
+Neither request body is ever written to the log, even with `Debug.HexDump` on: both
+endpoints carry `[SensitiveBody]`. That covers the API too — the digest it carries is a
+password-equivalent bearer token, so logging it is no better than logging the plaintext.
+
+`regCode` is the product serial, unique per account. It is set here and **only** here: at
+`MSG_REQAUTH` the client presents its own copy as `tmpRegcode`, and the two must match or
+authentication is refused with `reason="REGCODE"`. Nothing the client sends is ever written
+to the field.
+
+How the account is identified matters, because the game socket never carries the username:
+the client posts it to `/gameid_auth` over HTTP and afterwards presents only the credential
+it got back, as `uname`. That credential is the stored password hash, so **register with the
+same hash the client will present** or the account will not be found.
+
+`Protocol.RequireRegisteredAccount` decides what happens to a client matching no account.
+Off by default — an unrecognised client is admitted with nothing bound to its session, so the
+protocol can be exercised before any account exists. Turn it on once registration is in use.
+A client that *does* match an account always has its serial checked either way.
+
+**Registration is unauthenticated, and the form sends a plaintext password.** Configure
+`Https` in `conf/server.yaml`, or register only over a trusted LAN. Note this is a real
+regression for password *reuse* but close to none for this system: the digest the old
+JavaScript form sent was itself password-equivalent, so intercepting it already granted full
+account access.
+
+Anyone who can reach port 80 can create accounts.
+Firewall it, or put it behind whatever front end owns registration, before exposing the
+server publicly.
+
+## Database
+
+SQLite by default (`data/pes2010.db`, created and seeded on first run), MySQL in Docker.
+Tables: `Accounts`, `Players`, `PlayerStats`, `Matches`, `Information`.
+
+Blocks are **not** a table — they come from the `Lobbies` config section, because the list
+is operator policy that changes as a unit and the client addresses entries by position.
+
+Seeding reproduces what the reference server had hardcoded — one information item and the
+"Local Player" profile — so a fresh database behaves the way the client is already known to
+accept. Timestamps are stored as UTC `DateTime`, not `DateTimeOffset`: SQLite cannot order
+or index the latter.
+
+## Docker
+
+```bash
+docker compose -f docker/docker-compose.yml up --build
+```
+
+The client reaches the server through a hosts-file redirect of the Konami hostnames. That
+redirect must point at the **Docker host's** address, and `AdvertiseIp` must be that same
+address — otherwise the server list hands the client an address it cannot reach.
+
+## Testing
+
+- **Golden vectors** — `python tools/generate_goldens.py` imports `main.py` and dumps
+  inner bodies, Blowfish blocks, complete wire frames and response strings to
+  `tests/Pes2010.Protocol.Tests/goldens.json`. The C# tests assert byte equality against
+  them, including `CMD_GET_PLAYERINFO`, which is the largest response the server sends.
+- **Behaviour tests** run the real DI stack against a throwaway SQLite file, covering
+  dispatch, state gating, identity sharing across ports, and room membership.
+- **Live probe** — `tools/probe_client.py` builds packets with the reference
+  implementation's own codecs and prints the decrypted replies.
+
+## Status
+
+Working: gate discovery, EULA/URL list, HTTP asset and game-id auth endpoints, challenge
+and authentication, profile list and selection, player info, profile editing, block list
+and join, block player list, room create/join and member list, quick-match start.
+
+The grammar handles three value shapes: quoted strings, record lists (`key=[{..},{..}]`),
+plain scalar lists (`key=["","",""]`) and bare records used directly as a value
+(`profile={date=0,country=50}`). The last one only turned up when a live client sent
+CMD_SET_PLAYERPROFILE — worth remembering that the client's grammar is wider than any
+single capture shows.
+
+Stubbed: the challenge code is fixed and any credential is accepted; match results are not
+yet recorded. Room list payload and member-join notices exist but are gated behind
+`Protocol.EmitUnconfirmedMessages` because their message names are inferred rather than
+captured.
