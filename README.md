@@ -1,4 +1,4 @@
-# PES2010 PC Server
+# TenServer
 
 Reverse-engineered online server for Pro Evolution Soccer 2010 (PC). C# / .NET 9.
 
@@ -10,25 +10,26 @@ so the C# server is checked against the exact bytes the Python one produced.
 
 ```
 src/
-  Pes2010.Protocol/     XOR cipher, Blowfish-ECB, packet framing, key=value grammar codec
-  Pes2010.Data/         EF Core entities, DbContext, repositories, seeding
-  Pes2010.Server/       Host, per-service TCP listeners, dispatch, handlers, HTTP surface
+  TenServer.Protocol/     XOR cipher, Blowfish-ECB, packet framing, key=value grammar codec
+  TenServer.Data/         EF Core entities, DbContext, repositories, seeding
+  TenServer.Server/       Host, per-service TCP listeners, dispatch, handlers, HTTP surface
 tests/
-  Pes2010.Protocol.Tests/   Codec round-trips + byte-for-byte goldens from main.py
-  Pes2010.Server.Tests/     Handler behaviour + reference parity through the real DI stack
-tools/
-  generate_goldens.py   Regenerates the golden vectors from main.py
-  probe_client.py       Sends commands to a running server using main.py's own codecs
+  TenServer.Protocol.Tests/   Codec round-trips + byte-for-byte goldens from main.py
+  TenServer.Server.Tests/     Handler behaviour + reference parity through the real DI stack
 conf/server.yaml        All configuration
-docker/                 Dockerfile + compose (server + MySQL + Adminer)
-main.py                 Reference implementation — read only, never edited
 ```
+
+Kept locally but **not tracked** (see `.gitignore`), so a fresh clone will not have
+them: `main.py` (the reference implementation — read only, never edited), `tools/`
+(`generate_goldens.py`, `probe_client.py` — both import `main.py`), and `docker/`.
+The golden vectors those tools produce *are* tracked, at
+`tests/TenServer.Protocol.Tests/goldens.json`, so the test suite runs without them.
 
 ## Run
 
 ### Visual Studio
 
-Set **Pes2010.Server** as the startup project (right-click → Set as Startup Project) and
+Set **TenServer.Server** as the startup project (right-click → Set as Startup Project) and
 press F5. Pick a profile from the dropdown next to the play button:
 
 | Profile | HTTP / HTTPS | `AdvertiseIp` | Notes |
@@ -50,15 +51,15 @@ implicit, keeping the payload identical to the reference server). Whether the cl
 accepts an explicit port in those URLs is unconfirmed — use a game-ports profile when
 driving the real game.
 
-Profiles are in `src/Pes2010.Server/Properties/launchSettings.json`; they set only
-`PES2010_`-prefixed environment variables, so they layer over `conf/server.yaml` without
+Profiles are in `src/TenServer.Server/Properties/launchSettings.json`; they set only
+`TENSERVER_`-prefixed environment variables, so they layer over `conf/server.yaml` without
 duplicating it.
 
 ### Command line
 
 ```bash
-dotnet run --project src/Pes2010.Server
-dotnet run --project src/Pes2010.Server -- --config conf/server.yaml   # explicit config
+dotnet run --project src/TenServer.Server
+dotnet run --project src/TenServer.Server -- --config conf/server.yaml   # explicit config
 dotnet test                                                            # 60 tests
 ```
 
@@ -107,11 +108,11 @@ Two consequences of the split, both handled in code:
 ## Configuration
 
 `conf/server.yaml`, overridable by `conf/server.local.yaml` and then by environment
-variables using a `PES2010_` prefix and `__` for nesting:
+variables using a `TENSERVER_` prefix and `__` for nesting:
 
 ```bash
-PES2010_Server__AdvertiseIp=192.168.1.20
-PES2010_Server__Database__Provider=MySql
+TENSERVER_Server__AdvertiseIp=192.168.1.20
+TENSERVER_Server__Database__Provider=MySql
 ```
 
 Keys worth knowing:
@@ -211,7 +212,7 @@ Then add a `[Command]` method for it.
 The game has no registration flow, so accounts are created out of band.
 
 **In a browser:** open `http://<server>/register` — a Razor page
-(`src/Pes2010.Server/Pages/Register.cshtml`, styled by `wwwroot/css/register.css`). It asks
+(`src/TenServer.Server/Pages/Register.cshtml`, styled by `wwwroot/css/register.css`). It asks
 for the Game ID, a password twice, and the serial, then posts a plain form and hashes the
 password server-side. No JavaScript at all, and nothing loaded off this machine — the game
 box has no internet route through this server.
@@ -273,7 +274,7 @@ server publicly.
 
 ## Database
 
-SQLite by default (`data/pes2010.db`, created and seeded on first run), MySQL in Docker.
+SQLite by default (`data/tenserver.db`, created and seeded on first run), MySQL in Docker.
 Tables: `Accounts`, `Players`, `PlayerStats`, `Matches`, `Information`.
 
 Blocks are **not** a table — they come from the `Lobbies` config section, because the list
@@ -298,7 +299,7 @@ address — otherwise the server list hands the client an address it cannot reac
 
 - **Golden vectors** — `python tools/generate_goldens.py` imports `main.py` and dumps
   inner bodies, Blowfish blocks, complete wire frames and response strings to
-  `tests/Pes2010.Protocol.Tests/goldens.json`. The C# tests assert byte equality against
+  `tests/TenServer.Protocol.Tests/goldens.json`. The C# tests assert byte equality against
   them, including `CMD_GET_PLAYERINFO`, which is the largest response the server sends.
 - **Behaviour tests** run the real DI stack against a throwaway SQLite file, covering
   dispatch, state gating, identity sharing across ports, and room membership.
@@ -318,6 +319,11 @@ CMD_SET_PLAYERPROFILE — worth remembering that the client's grammar is wider t
 single capture shows.
 
 Stubbed: the challenge code is fixed and any credential is accepted; match results are not
-yet recorded. Room list payload and member-join notices exist but are gated behind
-`Protocol.EmitUnconfirmedMessages` because their message names are inferred rather than
-captured.
+yet recorded.
+
+`MSG_ROOMINNOTICE` — the notice telling a room's occupants that someone joined — is gated
+behind `Protocol.EmitUnconfirmedMessages` and therefore **off by default**. It reproducibly
+closes the recipient's Lobby connection, and the cause is not yet understood: the payload
+matches the field table `FUN_00BB4D70` declares, with the type codes and sizes that table
+expects. Everything else in the room flow (browse, endpoint lookup, join, room list
+updates) runs with the flag off. Turn it on to resume tracing that one message.
