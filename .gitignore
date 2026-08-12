@@ -1,0 +1,40 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.artifacts/
+
+# Runtime state
+data/
+logs/
+*.db
+*.db-shm
+*.db-wal
+
+# Local configuration overrides (never committed: may hold credentials)
+conf/*.local.yaml
+
+# Python reference implementation and the scripts that read it. main.py is the
+# original mono-file server, kept locally as the reference for protocol behaviour;
+# tools/ imports it to regenerate goldens.json, which is committed under tests/.
+main.py
+tools/
+__pycache__/
+.venv/
+
+# Reverse-engineering reference notes
+PES2010_SERVER_RE_HANDOFF.md
+
+# Container packaging
+docker/
+.dockerignore
+
+# Local machine configuration (MCP server wiring)
+.mcp.json
+
+#clankers stuff
+.claude/
+.codex/
+.agents/
