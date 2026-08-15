@@ -17,6 +17,14 @@ public sealed class CommandAttribute(string msg) : Attribute
     /// <summary>Service ports this command is accepted on.</summary>
     public ServiceRole Roles { get; init; } = ServiceRole.All;
 
+    /// <summary>
+    /// Titles this command registers for. The registry keeps the method only when the
+    /// server's configured <see cref="GameProfile"/> overlaps this set, so a per-title
+    /// variant declares its titles here instead of branching at runtime. Defaults to
+    /// every title; commands shared by all titles leave this unset.
+    /// </summary>
+    public GameProfile Profiles { get; init; } = GameProfile.All;
+
     /// <summary>Minimum session state; anything earlier is rejected before the handler runs.</summary>
     public SessionState RequiredState { get; init; } = SessionState.Connected;
 }
