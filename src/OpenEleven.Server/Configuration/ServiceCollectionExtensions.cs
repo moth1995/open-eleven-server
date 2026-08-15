@@ -74,14 +74,25 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GameIdAuthService>();
         services.AddScoped<RegistrationService>();
 
+        // The core assembly always supplies the shared commands. The configured title's
+        // profile assembly (when the host references it) adds or overrides with its
+        // profile-gated commands; it is filtered by the active profile inside Build.
+        var scanAssemblies = new List<System.Reflection.Assembly>
+        {
+            typeof(ServiceCollectionExtensions).Assembly,
+        };
+        var profileAssembly = TitleProfiles.TryLoadAssembly(options.GameProfile);
+        if (profileAssembly is not null && profileAssembly != scanAssemblies[0])
+            scanAssemblies.Add(profileAssembly);
+
         services.AddSingleton(_ => CommandRegistry.Build(
-            options.GameProfile, typeof(ServiceCollectionExtensions).Assembly));
+            options.GameProfile, scanAssemblies.ToArray()));
         services.AddSingleton<UnknownCommandLog>();
         services.AddSingleton<CommandDispatcher>();
 
         // --- scoped: one DI scope per dispatched command ---
         foreach (var handlerType in CommandRegistry.DiscoverHandlerTypes(
-                     options.GameProfile, typeof(ServiceCollectionExtensions).Assembly))
+                     options.GameProfile, scanAssemblies.ToArray()))
             services.AddScoped(handlerType);
 
         services.AddDbContext<GameDbContext>(dbOptions =>

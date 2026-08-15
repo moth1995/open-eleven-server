@@ -1,27 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- Shared core library: each title ships as its own slim exe under src/OpenEleven.*. -->
+    <OutputType>Library</OutputType>
     <RootNamespace>OpenEleven.Server</RootNamespace>
     <UserSecretsId>OpenEleven</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="NetEscapades.Configuration.Yaml" Version="3.1.0" />
-  </ItemGroup>
-
-  <!--
-    conf/server.yaml is gitignored, so a fresh clone does not have one and an
-    unconditional Include would fail the build with MSB3030. Use the real config when
-    it is there, and fall back to the tracked template so a clone builds and runs.
-  -->
-  <ItemGroup>
-    <Content Include="..\..\conf\server.yaml" Link="conf\server.yaml"
-             CopyToOutputDirectory="PreserveNewest"
-             Condition="Exists('..\..\conf\server.yaml')" />
-    <Content Include="..\..\conf\server.sample.yaml" Link="conf\server.yaml"
-             CopyToOutputDirectory="PreserveNewest"
-             Condition="!Exists('..\..\conf\server.yaml')" />
   </ItemGroup>
 
   <ItemGroup>

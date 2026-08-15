@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenEleven.Profiles.Pes2010Pc</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../OpenEleven.Server\OpenEleven.Server.csproj" />
+  </ItemGroup>
+
+</Project>

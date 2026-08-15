@@ -1,0 +1,93 @@
+# Pes2013Pc configuration. Cipher keys are shared by all titles and compiled into the
+# server (GameCrypto); only ports, version strings and the database differ per title.
+Server:
+  # Written into svraddr of every server-list entry; must be reachable by the client.
+  AdvertiseIp: "auto"
+
+  GameProfile: Pes2013Pc
+
+  Listen:
+    Host: 0.0.0.0
+    # Per-title HTTP/HTTPS so all four titles can run side-by-side on one host.
+    Http: 8083
+    Https: 8446
+    Backlog: 128
+    IdleTimeoutSeconds: 300
+
+  Services:
+    - Role: Gate
+      Name: Gate
+      Gid: 1
+      Port: 28013
+      MaxPlayers: 1000
+    - Role: FdLobby
+      Name: FdLobby
+      Gid: 2
+      Port: 28011
+      MaxPlayers: 1000
+    - Role: Lobby
+      Name: Lobby
+      Gid: 3
+      Port: 28012
+      MaxPlayers: 1000
+    - Role: Menu
+      Name: Menu
+      Gid: 4
+      Port: 28013
+      MaxPlayers: 1000
+    - Role: Account
+      Name: Account
+      Gid: 5
+      Port: 28014
+      MaxPlayers: 1000
+    - Role: VdpChat
+      Name: VdpChat
+      Gid: 6
+      Port: 28015
+      MaxPlayers: 1000
+
+  Lobbies:
+    - Name: Beginner
+      MaxPlayers: 100
+      Type: open
+    - Name: Standard
+      MaxPlayers: 100
+      Type: open
+    - Name: Expert
+      MaxPlayers: 100
+      Type: open
+
+  Https:
+    Enabled: false
+    CertificatePath: ""
+    CertificatePassword: ""
+
+  Database:
+    Provider: Sqlite
+    ConnectionString: "Data Source=data/pes2013pc.db"
+    AutoCreate: true
+    Seed: true
+
+  Protocol:
+    RequireEulaBeforeServerList: false
+    ChallengeCode: "00112233445566778899aabbccddeeff"
+    PendingLoginLifetimeSeconds: 300
+    PlayerSearchLimit: 100
+    BlockedTerms: []
+    ServerVersion: "1.0"
+    PatchVersion: "1.03"
+    DlcVersion: "1.07"
+    EulaVersion: "1.0"
+    AckUnknownCommands: true
+    AckBinaryPackets: true
+    EnforceSessionState: true
+    EnforceServiceRoles: false
+    ShareIdentityByRemoteAddress: false
+    EmitUnconfirmedMessages: false
+
+  Debug:
+    HexDump: true
+    HexDumpMaxBytes: 320
+    PrettyPrintPayloads: true
+    LogUnknownCommands: true
+    LogOutboundPayloads: true
