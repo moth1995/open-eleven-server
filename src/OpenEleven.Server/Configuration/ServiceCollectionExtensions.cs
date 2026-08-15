@@ -47,6 +47,12 @@ public static class ServiceCollectionExtensions
             options.Database.ConnectionString =
                 DatabasePath.ResolveSqlite(options.Database.ConnectionString);
 
+        // The active title, registered so dispatch and future per-title strategies can
+        // take it as a direct dependency instead of re-reading options. GameProfile is a
+        // value type, so this uses the non-generic overload (the generic one is
+        // class-constrained); GetRequiredService<GameProfile>() resolves it fine.
+        services.AddSingleton(typeof(GameProfile), options.GameProfile);
+
         // --- singletons: stateless codecs and the one global state store ---
         // The cipher keys are shared by every supported title, so they come from
         // GameCrypto constants rather than per-title configuration.
@@ -68,13 +74,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GameIdAuthService>();
         services.AddScoped<RegistrationService>();
 
-        services.AddSingleton(_ => CommandRegistry.Build(typeof(ServiceCollectionExtensions).Assembly));
+        services.AddSingleton(_ => CommandRegistry.Build(
+            options.GameProfile, typeof(ServiceCollectionExtensions).Assembly));
         services.AddSingleton<UnknownCommandLog>();
         services.AddSingleton<CommandDispatcher>();
 
         // --- scoped: one DI scope per dispatched command ---
         foreach (var handlerType in CommandRegistry.DiscoverHandlerTypes(
-                     typeof(ServiceCollectionExtensions).Assembly))
+                     options.GameProfile, typeof(ServiceCollectionExtensions).Assembly))
             services.AddScoped(handlerType);
 
         services.AddDbContext<GameDbContext>(dbOptions =>

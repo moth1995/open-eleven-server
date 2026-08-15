@@ -34,15 +34,21 @@ public sealed class CommandRegistry
     public bool TryGet(string msg, out CommandEntry entry) => _byMsg.TryGetValue(msg, out entry!);
 
     /// <summary>All handler types found, so the host can register them in DI.</summary>
-    public static IReadOnlyList<Type> DiscoverHandlerTypes(Assembly assembly)
-        => Scan(assembly).Select(x => x.Method.DeclaringType!).Distinct().ToArray();
+    public static IReadOnlyList<Type> DiscoverHandlerTypes(
+        GameProfile activeProfile, params Assembly[] assemblies)
+        => Scan(activeProfile, assemblies).Select(x => x.Method.DeclaringType!).Distinct().ToArray();
 
-    public static CommandRegistry Build(Assembly assembly)
+    /// <summary>
+    /// Scans the given assemblies for <see cref="CommandAttribute"/> handlers and keeps
+    /// those declared for <paramref name="activeProfile"/>. The profile filter runs before
+    /// the duplicate-message check, so per-title variants of the same command coexist.
+    /// </summary>
+    public static CommandRegistry Build(GameProfile activeProfile, params Assembly[] assemblies)
     {
         var entries = new List<CommandEntry>();
         var seen = new Dictionary<string, MethodInfo>(StringComparer.Ordinal);
 
-        foreach (var (method, attribute) in Scan(assembly))
+        foreach (var (method, attribute) in Scan(activeProfile, assemblies))
         {
             if (seen.TryGetValue(attribute.Msg, out var previous))
                 throw new InvalidOperationException(
@@ -62,22 +68,34 @@ public sealed class CommandRegistry
         return new CommandRegistry(entries);
     }
 
-    private static IEnumerable<(MethodInfo Method, CommandAttribute Attribute)> Scan(Assembly assembly)
+    private static IEnumerable<(MethodInfo Method, CommandAttribute Attribute)> Scan(
+        GameProfile activeProfile, params Assembly[] assemblies)
     {
-        foreach (var type in assembly.GetTypes())
+        foreach (var assembly in assemblies)
         {
-            if (type.IsAbstract || type.IsInterface || type.IsGenericTypeDefinition)
-                continue;
-
-            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            foreach (var type in assembly.GetTypes())
             {
-                var attributes = method.GetCustomAttributes<CommandAttribute>().ToArray();
-                if (attributes.Length == 0)
+                if (type.IsAbstract || type.IsInterface || type.IsGenericTypeDefinition)
                     continue;
 
-                Validate(method);
-                foreach (var attribute in attributes)
-                    yield return (method, attribute);
+                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    var attributes = method.GetCustomAttributes<CommandAttribute>().ToArray();
+                    if (attributes.Length == 0)
+                        continue;
+
+                    Validate(method);
+                    foreach (var attribute in attributes)
+                    {
+                        // A command not declared for the active title is skipped before the
+                        // duplicate check, so disjoint per-title variants of the same message
+                        // never collide.
+                        if ((attribute.Profiles & activeProfile) == 0)
+                            continue;
+
+                        yield return (method, attribute);
+                    }
+                }
             }
         }
     }
