@@ -11,15 +11,15 @@ using OpenEleven.Server.Web;
 var builder = WebApplication.CreateBuilder(args);
 
 // ---------------------------------------------------------------------------
-// Configuration: YAML file, an optional local override, then OpenEleven_-prefixed
-// environment variables (OpenEleven_Server__Database__ConnectionString and friends).
+// Configuration: YAML file, an optional local override, then OPENELEVEN_-prefixed
+// environment variables (OPENELEVEN_Server__Database__ConnectionString and friends).
 // ---------------------------------------------------------------------------
 var configPath = GetConfigPath(args) ?? Path.Combine(AppContext.BaseDirectory, "conf", "server.yaml");
 
 builder.Configuration
     .AddYamlFile(configPath, optional: false, reloadOnChange: true)
     .AddYamlFile(Path.ChangeExtension(configPath, ".local.yaml"), optional: true, reloadOnChange: true)
-    .AddEnvironmentVariables("OpenEleven_");
+    .AddEnvironmentVariables("OPENELEVEN_");
 
 builder.Services.AddOpenElevenCore(builder.Configuration);
 builder.Services.AddHostedService<RoomWatchPublisher>();
