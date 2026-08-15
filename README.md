@@ -71,10 +71,13 @@ duplicating it.
 
 ### Command line
 
+Each title is its own executable under `src/OpenEleven.<Title>` (Pes2010Pc, Pes2011Pc,
+Pes2012Pc, Pes2013Pc), loading its own `conf/server.<title>.yaml`:
+
 ```bash
-dotnet run --project src/OpenEleven.Server
-dotnet run --project src/OpenEleven.Server -- --config conf/server.yaml   # explicit config
-dotnet test                                                            # 60 tests
+dotnet run --project src/OpenEleven.Pes2010Pc
+dotnet run --project src/OpenEleven.Pes2011Pc
+dotnet test                                                   # full suite
 ```
 
 With no `--config`, the server loads `conf/server.yaml` from next to the binary. The SQLite
