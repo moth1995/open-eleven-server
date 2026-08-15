@@ -10,7 +10,7 @@ namespace OpenEleven.Server.Dispatch;
 /// drowns in a polling loop; a single ranked summary at shutdown is the reverse-engineering
 /// worklist, ordered by how badly the client wants each one.
 /// </summary>
-public sealed class UnknownCommandLog(ILogger<UnknownCommandLog> log)
+public sealed class UnknownCommandLog(ILogger<UnknownCommandLog> log, GameProfile profile)
 {
     private readonly ConcurrentDictionary<Key, Entry> _entries = new();
 
@@ -38,7 +38,7 @@ public sealed class UnknownCommandLog(ILogger<UnknownCommandLog> log)
     {
         if (_entries.IsEmpty)
         {
-            log.LogInformation("No unhandled commands were seen this session.");
+            log.LogInformation("No unhandled commands were seen this session ({Profile}).", profile);
             return;
         }
 
@@ -53,8 +53,9 @@ public sealed class UnknownCommandLog(ILogger<UnknownCommandLog> log)
                 e.Value.SampleRequest));
 
         log.LogWarning(
-            "{Count} command(s) had no handler this session:\n{Lines}",
+            "{Count} command(s) had no handler this session ({Profile}):\n{Lines}",
             _entries.Count,
+            profile,
             string.Join('\n', lines));
     }
 }
