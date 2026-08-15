@@ -20,8 +20,10 @@ Server:
   # this address for every other service, and then silently fails to reach them.
   AdvertiseIp: "auto"
 
-  # Reserved for per-title behaviour switches. Nothing reads it yet.
-  GameProfile: Default
+  # The single title this process serves: Pes2010Pc, Pes2011Pc, Pes2012Pc or
+  # Pes2013Pc. It selects which profile-gated commands register at startup; one
+  # process serves exactly one title, so run one instance per title.
+  GameProfile: Pes2010Pc
 
   Listen:
     Host: 0.0.0.0

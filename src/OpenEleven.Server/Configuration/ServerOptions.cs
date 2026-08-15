@@ -16,7 +16,11 @@ public sealed class ServerOptions
     /// </summary>
     public string AdvertiseIp { get; set; } = "auto";
 
-    public string GameProfile { get; set; } = "Default";
+    /// <summary>
+    /// The single title this process serves. Selects which profile-gated commands
+    /// register at startup. One process = one title; per-title values only, never All.
+    /// </summary>
+    public GameProfile GameProfile { get; set; } = GameProfile.Pes2010Pc;
 
     public ListenOptions Listen { get; set; } = new();
     public List<ServiceEndpointOptions> Services { get; set; } = new();

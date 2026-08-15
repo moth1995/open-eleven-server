@@ -14,6 +14,13 @@ public sealed class ServerOptionsValidator : IValidateOptions<ServerOptions>
     {
         var failures = new List<string>();
 
+        // GameProfile must be exactly one named title: undefined bits, zero, flag
+        // combinations and All are all rejected because one process serves one title.
+        if (!Enum.IsDefined(options.GameProfile) || options.GameProfile == GameProfile.All)
+            failures.Add(
+                "Server.GameProfile must name exactly one title " +
+                "(Pes2010Pc, Pes2011Pc, Pes2012Pc or Pes2013Pc).");
+
         if (!AuthProof.TryDecodeChallenge(options.Protocol.ChallengeCode, out _))
             failures.Add("Protocol.ChallengeCode must contain exactly 32 hexadecimal characters.");
 
