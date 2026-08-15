@@ -25,7 +25,7 @@ public sealed class Room
     }
 
     public int Id { get; }
-    public string Name { get; }
+    public string Name { get; set; }
     public int OwnerPid { get; private set; }
     public int MaxMembers { get; }
     public ServiceRole ServiceRole { get; }
@@ -93,6 +93,13 @@ public sealed class Room
             session.GameSide = -1;
             session.GameEntryWatchRqid = null;
             session.RoomStateWatchRqid = null;
+            session.DecideGameEnvWatchRqid = null;
+            session.DecideGamePlayerWatchRqid = null;
+            session.DecideGamePlayerEnvWatchRqid = null;
+            session.DisconPlayerEnvWatchRqid = null;
+            session.DisconPlayerMatchWatchRqid = null;
+            session.UpdateGameRecordWatchRqid = null;
+            session.HasGuestPlayer = false;
             return new RoomRemoval(true, ownerChanged, _members.ToArray());
         }
     }

@@ -258,6 +258,11 @@ public sealed class Hub(ILogger<Hub> log)
         foreach (var remaining in removal.RemainingMembers)
             remaining.Push(notice);
 
+        // The entry-game screen tracks departures through its own pair of watches: who left,
+        // then the side assignments that leaving may have reshuffled.
+        PublishDisconPlayerEnv(room, session.Pid);
+        PublishDisconPlayerMatch(room);
+
         if (removal.OwnerChanged)
             PublishRoomStateChanged(room, "OwnerChanged");
 
@@ -274,22 +279,61 @@ public sealed class Hub(ILogger<Hub> log)
         // blamed this notice for the owner's disconnect, but a run with it suppressed
         // reproduced the failure: the actual bad delivery was MSG_ROOMLISTUPDATE being
         // sent to the owner after it had left the room-browser state.
-        var notice = KvMessage.Ok("MSG_ROOMINNOTICE", UnsolicitedRqid)
-            .Set("ex_ip", member.ExternalIp)
-            .Set("ex_port", member.ExternalPort)
-            .Set("in_ip", member.InternalIp)
-            .Set("in_port", member.InternalPort)
-            .Set("pid", member.Pid)
-            // room_pid identifies the room owner. The client keeps the joining
-            // occupant's identity separately in pid.
-            .Set("room_pid", room.OwnerPid)
-            .Set("room_entry_no", member.RoomEntryNo)
-            .Set("game_entry_no", -1);
-
         foreach (var existing in join.ExistingMembers)
+        {
+            var notice = KvMessage.Ok("MSG_ROOMINNOTICE", UnsolicitedRqid)
+                .Set("ex_ip", member.ExternalIp)
+                .Set("ex_port", member.ExternalPort)
+                .Set("in_ip", member.InternalIp)
+                .Set("in_port", member.InternalPort)
+                .Set("pid", member.Pid)
+                // room_pid identifies the room owner. The client keeps the joining
+                // occupant's identity separately in pid.
+                .Set("room_pid", room.OwnerPid)
+                .Set("room_entry_no", member.RoomEntryNo)
+                .Set("game_entry_no", -1);
             existing.Push(notice);
+            PublishPeerEndpoints(room, existing);
+        }
+
+        // WAITING is the one-player room-browser state. Once another player joins,
+        // the configured room enters the pre-match SETENV state. Do not advance an
+        // unconfigured room or regress a room already beyond pre-match.
+        if (room.Count > 1 && room.GameEnvironment is not null && room.Status == "WAITING")
+            room.TrySetStatus("SETENV");
+
+        PublishRoomStateChanged(room, "StateChanged", member.Id);
 
         PublishRoomUpdated(room, member.Id);
+    }
+
+    public int PublishPeerEndpoints(Room room, Session? onlyRecipient = null)
+    {
+        var members = room.Snapshot();
+        var sent = 0;
+        foreach (var recipient in members)
+        {
+            if (onlyRecipient is not null && recipient.Id != onlyRecipient.Id)
+                continue;
+            // PES2010 registers this as a local CMD_COMMON_WATCH during Lobby
+            // initialization; it does not send a matching request to the server.
+            // Other clients may still park a request and provide an rqid.
+            var rqid = recipient.IpAndPortWatchRqid ?? UnsolicitedRqid;
+
+            foreach (var peer in members.Where(peer => peer.Pid != recipient.Pid))
+            {
+                var update = KvMessage.Ok("CMD_WATCH_IPANDPORT", rqid)
+                    .Set("ex_ip", peer.ExternalIp)
+                    .Set("ex_port", peer.ExternalPort)
+                    .Set("in_ip", peer.InternalIp)
+                    .Set("in_port", peer.InternalPort)
+                    .Set("pid", peer.Pid);
+                if (recipient.Push(update))
+                    sent++;
+            }
+        }
+
+        return sent;
     }
 
     public void PublishRoomUpdated(Room room, Guid? except = null)
@@ -298,26 +342,167 @@ public sealed class Hub(ILogger<Hub> log)
         // complete entry as the initial list rather than an ID-only placeholder.
         var update = KvMessage.Ok("MSG_ROOMLISTUPDATE", UnsolicitedRqid)
             .SetList("count", "roomList", [RoomPresenter.ListEntry(room)]);
-        BroadcastToRoomListSubscribers(room, update, except);
+        BroadcastRoomListToBlock(room, update, except);
     }
 
     public int PublishGameEntryChanged(Room room)
     {
         var members = room.Snapshot();
-        var entries = members.Select(member => new KvMessage()
-            .Set("pid", member.Pid)
-            .Set("entryNum", member.RoomEntryNo)
-            .Set("gameNum", member.GameEntryNo)).ToArray();
+        // FUN_0072AEB0 iterates entry_count records as fixed room slots. It also
+        // requires every unoccupied slot to be present with gameNum=-1; sending
+        // only occupied members leaves the client with an incomplete snapshot.
+        var entries = Enumerable.Range(0, room.MaxMembers)
+            .Select(slot =>
+            {
+                var member = members.FirstOrDefault(candidate => candidate.RoomEntryNo == slot);
+                return new KvMessage()
+                    .Set("pid", member?.Pid ?? -1)
+                    .Set("entryNum", slot)
+                    .Set("gameNum", member?.GameEntryNo ?? -1);
+            })
+            .ToArray();
 
         var sent = 0;
         foreach (var member in members)
         {
-            if (member.GameEntryWatchRqid is not { } rqid)
-                continue;
+            // PES2010 arms this watch locally (FUN_007bacc0) and does not send a
+            // matching wire request.  A parked rqid is still supported for other
+            // protocol variants, but the normal client needs unsolicited rqid=0
+            // snapshots until it has populated every game slot.
+            var rqid = member.GameEntryWatchRqid ?? UnsolicitedRqid;
 
             var update = KvMessage.Ok("CMD_WATCH_ENTRY_GAME", rqid)
                 .SetList("entry_count", "entrygame", entries);
             if (member.Push(update))
+                sent++;
+        }
+
+        return sent;
+    }
+
+    /// <summary>
+    /// Rebroadcasts the host's match settings. FUN_0072E630 reads the same game_env record
+    /// CMD_SET_GAMEENV carries, so a member that never sees this never learns the settings.
+    /// </summary>
+    public int PublishDecideGameEnv(Room room)
+    {
+        if (room.GameEnvironment is null)
+            return 0;
+
+        var sent = 0;
+        foreach (var member in room.Snapshot())
+        {
+            var rqid = member.DecideGameEnvWatchRqid ?? UnsolicitedRqid;
+            var update = KvMessage.Ok("CMD_WATCH_DECIDE_GAMEENV", rqid)
+                .Set("game_env", room.GameEnvironment);
+            if (member.Push(update))
+                sent++;
+        }
+
+        return sent;
+    }
+
+    /// <summary>
+    /// The room roster as fixed slots. FUN_0072ED20 reads status and player_count, then
+    /// walks pid and video as plain scalar lists of one entry per slot — the same bracketed
+    /// form as desiredPosition, not brace-wrapped records.
+    /// </summary>
+    public int PublishDecideGamePlayer(Room room)
+    {
+        var members = room.Snapshot();
+        var pids = Enumerable.Range(0, room.MaxMembers)
+            .Select(slot => (object?)(members.FirstOrDefault(m => m.RoomEntryNo == slot)?.Pid ?? -1))
+            .ToArray();
+        // Nothing captures a client's refresh rate yet: CMD_SET_CURRENTPLAYER carries
+        // frame_rate but the account handler does not read it. 60Hz for every slot until
+        // that is wired through.
+        var video = KvArray.Repeat("FRAME_60", room.MaxMembers);
+
+        var sent = 0;
+        foreach (var member in members)
+        {
+            var rqid = member.DecideGamePlayerWatchRqid ?? UnsolicitedRqid;
+            var update = KvMessage.Ok("CMD_WATCH_DECIDE_GAMEPLAYER", rqid)
+                .Set("status", room.Status)
+                .Set("player_count", members.Count)
+                .Set("pid", new KvArray(pids))
+                .Set("video", video);
+            if (member.Push(update))
+                sent++;
+        }
+
+        return sent;
+    }
+
+    /// <summary>
+    /// Side and captain assignment. FUN_0072F020 reads count plus sideinfo[i].{pid,side,
+    /// sideLeader}; FUN_0072F300 reads the identical records under sideInfo — the capital I
+    /// is the client's own spelling and the two are not interchangeable.
+    /// </summary>
+    public int PublishDecideGamePlayerEnv(Room room)
+        => PublishSideInfo(
+            room,
+            "CMD_WATCH_DECIDE_GAMEPLAYERENV",
+            "sideinfo",
+            member => member.DecideGamePlayerEnvWatchRqid);
+
+    public int PublishDisconPlayerMatch(Room room)
+        => PublishSideInfo(
+            room,
+            "CMD_WATCH_DISCON_PLAYERMATCH",
+            "sideInfo",
+            member => member.DisconPlayerMatchWatchRqid);
+
+    private int PublishSideInfo(
+        Room room,
+        string msg,
+        string listKey,
+        Func<Session, int?> watchRqid)
+    {
+        var entries = BuildSideInfoEntries(room);
+        var sent = 0;
+        foreach (var member in room.Snapshot())
+        {
+            var update = KvMessage.Ok(msg, watchRqid(member) ?? UnsolicitedRqid)
+                .SetList("count", listKey, entries);
+            if (member.Push(update))
+                sent++;
+        }
+
+        return sent;
+    }
+
+    /// <summary>
+    /// One record per member that has taken a side. The room owner leads HOME; the lowest
+    /// entry number on AWAY leads that side.
+    /// </summary>
+    private static KvMessage[] BuildSideInfoEntries(Room room)
+    {
+        var sided = room.Snapshot().Where(member => member.GameSide is 0 or 1).ToArray();
+        var awayLeaderId = sided
+            .Where(member => member.GameSide == 1)
+            .OrderBy(member => member.RoomEntryNo)
+            .FirstOrDefault()?.Id;
+
+        return sided.Select(member => new KvMessage()
+                .Set("pid", member.Pid)
+                // Enum type 0x19 accepts only HOME/AWAY, type 0x36 only NO/YES.
+                .Set("side", member.GameSide == 0 ? "HOME" : "AWAY")
+                .Set("sideLeader",
+                    (member.GameSide == 0 && member.Pid == room.OwnerPid) || member.Id == awayLeaderId
+                        ? "YES"
+                        : "NO"))
+            .ToArray();
+    }
+
+    /// <summary>Who left. FUN_0072AD70 reads a single top-level pid.</summary>
+    public int PublishDisconPlayerEnv(Room room, int leftPid)
+    {
+        var sent = 0;
+        foreach (var member in room.Snapshot())
+        {
+            var rqid = member.DisconPlayerEnvWatchRqid ?? UnsolicitedRqid;
+            if (member.Push(KvMessage.Ok("CMD_WATCH_DISCON_PLAYERENV", rqid).Set("pid", leftPid)))
                 sent++;
         }
 
@@ -329,19 +514,30 @@ public sealed class Hub(ILogger<Hub> log)
         var sent = 0;
         foreach (var member in room.Snapshot())
         {
-            if (member.RoomStateWatchRqid is not { } rqid)
-                continue;
-
-            var update = KvMessage.Ok("CMD_WATCH_ROOMSTATE", rqid)
-                .Set("event", eventName)
-                .Set("owner_pid", room.OwnerPid)
-                .Set("state", room.Status);
-            if (member.Push(update))
+            if (BuildRoomStateUpdate(room, member, eventName) is { } update && member.Push(update))
                 sent++;
         }
 
         return sent;
     }
+
+    public int PublishRoomStateChanged(Room room, string eventName, Guid except)
+    {
+        var sent = 0;
+        foreach (var member in room.Snapshot().Where(member => member.Id != except))
+        {
+            if (BuildRoomStateUpdate(room, member, eventName) is { } update && member.Push(update))
+                sent++;
+        }
+
+        return sent;
+    }
+
+    public KvMessage? BuildRoomStateUpdate(Room room, Session member, string eventName = "StateChanged")
+        => KvMessage.Ok("CMD_WATCH_ROOMSTATE", member.RoomStateWatchRqid ?? UnsolicitedRqid)
+            .Set("event", eventName)
+            .Set("owner_pid", room.OwnerPid)
+            .Set("state", room.Status);
 
     public int PublishStartableGameEntrySnapshots()
     {
@@ -351,11 +547,19 @@ public sealed class Hub(ILogger<Hub> log)
         return sent;
     }
 
+    public int PublishRoomStateSnapshots()
+    {
+        var sent = 0;
+        foreach (var room in Rooms.Where(room => !room.IsEmpty))
+            sent += PublishRoomStateChanged(room);
+        return sent;
+    }
+
     private void PublishRoomDeleted(Room room, Guid? except)
     {
         // FUN_00BB9C70 requires rid for MSG_ROOMLISTDEL.
         var deleted = KvMessage.Ok("MSG_ROOMLISTDEL", UnsolicitedRqid).Set("rid", room.Id);
-        BroadcastToRoomListSubscribers(room, deleted, except);
+        BroadcastRoomListToBlock(room, deleted, except);
     }
 
     /// <summary>
@@ -401,14 +605,15 @@ public sealed class Hub(ILogger<Hub> log)
         return sent;
     }
 
-    private int BroadcastToRoomListSubscribers(Room room, KvMessage message, Guid? except)
+    private int BroadcastRoomListToBlock(Room room, KvMessage message, Guid? except)
     {
         var sent = 0;
-        // The subscription flag survives screen changes, but this payload is consumed by
-        // the room-browser parser and disconnects clients that receive it while InRoom.
+        // Room-list changes are block-scoped. The Lobby client keeps the browser cache
+        // for the whole block and may not issue MSG_REQROOMLIST again after connecting,
+        // so delivery cannot depend on a per-request subscription flag. InRoom sessions
+        // are excluded because their connection has left the room-browser parser.
         foreach (var subscriber in _sessions.Values.Where(session =>
-                     session.RoomListSubscribed
-                     && session.State == SessionState.InBlock
+                     session.State == SessionState.InBlock
                      && session.Role == room.ServiceRole
                      && session.BlockId == room.BlockId))
         {

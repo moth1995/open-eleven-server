@@ -64,6 +64,23 @@ public sealed class Session
     public int GameSide { get; set; } = -1;
     public int? GameEntryWatchRqid { get; set; }
     public int? RoomStateWatchRqid { get; set; }
+    public int? IpAndPortWatchRqid { get; set; }
+
+    /// <summary>
+    /// The entry-game screen (FUN_007bacc0) arms these six in one burst alongside
+    /// CMD_WATCH_ENTRY_GAME. They are how a non-host member learns what the host is
+    /// configuring, so none of them can depend on the member having asked first.
+    /// </summary>
+    public int? DecideGameEnvWatchRqid { get; set; }
+    public int? DecideGamePlayerWatchRqid { get; set; }
+    public int? DecideGamePlayerEnvWatchRqid { get; set; }
+    public int? DisconPlayerEnvWatchRqid { get; set; }
+    public int? DisconPlayerMatchWatchRqid { get; set; }
+    public int? UpdateGameRecordWatchRqid { get; set; }
+
+    /// <summary>A second local controller sharing this connection's slot.</summary>
+    public bool HasGuestPlayer { get; set; }
+
     public bool RoomListSubscribed { get; set; }
 
     /// <summary>Endpoints learned from CMD_JOIN_BLOCK; the peers need them for P2P setup.</summary>

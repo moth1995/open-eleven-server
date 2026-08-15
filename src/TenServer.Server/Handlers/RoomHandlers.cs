@@ -23,7 +23,7 @@ public sealed class RoomHandlers(
         // The room browser sends CMD_JOIN_ROOM for an advertised existing room.
         var requestedId = ctx.Request.GetInt32("room_id", 0);
         if (requestedId > 0)
-            return Reply.Of(JoinExistingRoom(ctx, requestedId, includeRoomId: true));
+            return ValueTask.FromResult(JoinExistingRoom(ctx, requestedId, includeRoomId: true));
 
         if (ctx.Session.RoomId is not null)
             return Reply.Of(ctx.Fail("ERR_ALREADYINROOM"));
@@ -58,7 +58,7 @@ public sealed class RoomHandlers(
         if (roomId <= 0)
             return Reply.Of(ctx.Fail("ERR_INVALIDROOMINFO"));
 
-        return Reply.Of(JoinExistingRoom(ctx, roomId, includeRoomOwner: true));
+        return ValueTask.FromResult(JoinExistingRoom(ctx, roomId, includeRoomOwner: true));
     }
 
     /// <summary>
@@ -152,6 +152,8 @@ public sealed class RoomHandlers(
             return Reply.Of(ctx.Err("NOROOM"));
 
         room.GameEnvironment = environment;
+        // The other occupants only ever learn the settings through this watch.
+        ctx.Hub.PublishDecideGameEnv(room);
         ctx.Hub.PublishRoomUpdated(room, ctx.Session.Id);
 
         log.LogInformation(
@@ -174,13 +176,144 @@ public sealed class RoomHandlers(
         return Reply.None();
     }
 
-    [Command("CMD_WATCH_ROOMSTATE", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    // Ghidra FUN_00754780 registers Lobby watches during service initialization,
+    // before MSG_REQAUTH and CMD_SET_CURRENTPLAYER complete.
+    [Command("CMD_WATCH_ROOMSTATE", Roles = RoomRoles, RequiredState = SessionState.Connected)]
     public ValueTask<KvMessage[]> WatchRoomState(CommandContext ctx)
     {
         ctx.Session.RoomStateWatchRqid = ctx.Rqid;
         if (ctx.Session.RoomId is { } roomId && ctx.Hub.FindRoom(roomId) is { } room)
             ctx.Hub.PublishRoomStateChanged(room);
         return Reply.None();
+    }
+
+    [Command("CMD_WATCH_IPANDPORT", Roles = RoomRoles, RequiredState = SessionState.Connected)]
+    public ValueTask<KvMessage[]> WatchIpAndPort(CommandContext ctx)
+    {
+        ctx.Session.IpAndPortWatchRqid = ctx.Rqid;
+        if (ctx.Session.RoomId is { } roomId && ctx.Hub.FindRoom(roomId) is { } room)
+            ctx.Hub.PublishPeerEndpoints(room, ctx.Session);
+        return Reply.None();
+    }
+
+    // FUN_007bacc0 arms the next six together when the entry-game screen opens, before
+    // any of them has anything to report. Each one is how a member that is not the host
+    // learns what the host is doing, so none may depend on a parked rqid.
+    [Command("CMD_WATCH_DECIDE_GAMEENV", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> WatchDecideGameEnv(CommandContext ctx)
+    {
+        ctx.Session.DecideGameEnvWatchRqid = ctx.Rqid;
+        if (ctx.Session.RoomId is { } roomId && ctx.Hub.FindRoom(roomId) is { } room)
+            ctx.Hub.PublishDecideGameEnv(room);
+        return Reply.None();
+    }
+
+    [Command("CMD_WATCH_DECIDE_GAMEPLAYER", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> WatchDecideGamePlayer(CommandContext ctx)
+    {
+        ctx.Session.DecideGamePlayerWatchRqid = ctx.Rqid;
+        if (ctx.Session.RoomId is { } roomId && ctx.Hub.FindRoom(roomId) is { } room)
+            ctx.Hub.PublishDecideGamePlayer(room);
+        return Reply.None();
+    }
+
+    [Command("CMD_WATCH_DECIDE_GAMEPLAYERENV", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> WatchDecideGamePlayerEnv(CommandContext ctx)
+    {
+        ctx.Session.DecideGamePlayerEnvWatchRqid = ctx.Rqid;
+        if (ctx.Session.RoomId is { } roomId && ctx.Hub.FindRoom(roomId) is { } room)
+            ctx.Hub.PublishDecideGamePlayerEnv(room);
+        return Reply.None();
+    }
+
+    [Command("CMD_WATCH_DISCON_PLAYERENV", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> WatchDisconPlayerEnv(CommandContext ctx)
+    {
+        // Nothing to report until somebody leaves.
+        ctx.Session.DisconPlayerEnvWatchRqid = ctx.Rqid;
+        return Reply.None();
+    }
+
+    [Command("CMD_WATCH_DISCON_PLAYERMATCH", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> WatchDisconPlayerMatch(CommandContext ctx)
+    {
+        ctx.Session.DisconPlayerMatchWatchRqid = ctx.Rqid;
+        return Reply.None();
+    }
+
+    // Bare signal. Its trigger is the post-match record write, which this server does not
+    // implement yet; registering it keeps the screen's arming burst from erroring.
+    [Command("CMD_WATCH_UPDATE_GAMERECORD", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> WatchUpdateGameRecord(CommandContext ctx)
+    {
+        ctx.Session.UpdateGameRecordWatchRqid = ctx.Rqid;
+        return Reply.None();
+    }
+
+    [Command("CMD_SET_GUEST", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> SetGuest(CommandContext ctx)
+    {
+        var room = ctx.Session.RoomId is { } id ? ctx.Hub.FindRoom(id) : null;
+        if (room is null)
+            return Reply.Of(ctx.Fail("ERR_ROOMNOTFOUND"));
+
+        ctx.Session.HasGuestPlayer = ctx.Request.GetString("has_guestplayer") == "YES";
+        ctx.Hub.PublishRoomUpdated(room);
+        return Reply.Of(ctx.Ok());
+    }
+
+    [Command("CMD_CHANGE_ROOMNAME", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> ChangeRoomName(CommandContext ctx)
+    {
+        var room = ctx.Session.RoomId is { } id ? ctx.Hub.FindRoom(id) : null;
+        if (room is null)
+            return Reply.Of(ctx.Fail("ERR_ROOMNOTFOUND"));
+        if (ctx.Session.Pid != room.OwnerPid)
+            return Reply.Of(ctx.Fail("ERR_NOTROOMOWNER"));
+
+        if (!textPolicy.TryValidate(ctx.Request.GetString("name") ?? "", out var name))
+            return Reply.Of(ctx.Fail("ERR_INVALIDROOMINFO"));
+
+        room.Name = name;
+        room.Password = ctx.Request.GetString("passwd") ?? room.Password;
+        ctx.Hub.PublishRoomUpdated(room);
+        return Reply.Of(ctx.Ok());
+    }
+
+    [Command("CMD_KICK_ROOMMEMBER", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> KickRoomMember(CommandContext ctx)
+    {
+        var room = ctx.Session.RoomId is { } id ? ctx.Hub.FindRoom(id) : null;
+        if (room is null)
+            return Reply.Of(ctx.Fail("ERR_ROOMNOTFOUND"));
+        if (ctx.Session.Pid != room.OwnerPid)
+            return Reply.Of(ctx.Fail("ERR_NOTROOMOWNER"));
+
+        var targetPid = ctx.Request.GetInt32("target_pid", 0);
+        var target = room.Snapshot().FirstOrDefault(member => member.Pid == targetPid);
+        if (target is null || target.Pid == ctx.Session.Pid)
+            return Reply.Of(ctx.Fail("ERR_TARGETPLAYERNOTEXIST"));
+
+        // Same path as a voluntary exit, so the notices and any ownership handover match.
+        ctx.Hub.LeaveRoom(target, room.Id);
+        log.LogInformation(
+            "pid {Target} kicked from room {RoomId} by owner pid {Owner}",
+            targetPid, room.Id, ctx.Session.Pid);
+        return Reply.Of(ctx.Ok());
+    }
+
+    // FUN_007c8500 sends this after CMD_GET_IPANDPORT/NAT negotiation. Despite
+    // its WATCH name, this is a request/response gate: the client waits for the
+    // same command with room_id before entering the next room setup state.
+    [Command("CMD_WATCH_ROOMPLAYERLIST", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> WatchRoomPlayerList(CommandContext ctx)
+    {
+        var requestedRoomId = ctx.Request.GetInt32("room_id", 0);
+        if (ctx.Session.RoomId is not { } roomId || requestedRoomId != roomId)
+            return Reply.Of(ctx.Fail("ERR_ROOMNOTFOUND"));
+
+        return Reply.Of(ctx.Ok("CMD_WATCH_ROOMPLAYERLIST")
+            .Set("room_id", roomId));
     }
 
     [Command("CMD_UPDATE_ROOMSTATE", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
@@ -223,10 +356,13 @@ public sealed class RoomHandlers(
         if (room is null)
             return Reply.Of(ctx.Fail("ERR_ROOMNOTFOUND"));
 
+        // FUN_007b7bc0 writes entry as the numeric enum value 1. Keep the textual
+        // aliases for captures/older clients, but do not silently drop the real wire
+        // form: that leaves GameEntryNo at -1 and prevents the entry screen advancing.
         var entered = ctx.Request.GetString("entry") switch
         {
-            "TRUE" => true,
-            "FALSE" => false,
+            "1" or "TRUE" or "YES" => true,
+            "0" or "FALSE" or "NO" => false,
             _ => (bool?)null,
         };
         var side = ctx.Request.GetString("side") switch
@@ -252,7 +388,11 @@ public sealed class RoomHandlers(
         if (!ctx.Session.Push(ctx.Ok()))
             log.LogWarning("Outbound queue full; dropped CMD_ENTRY_GAME ACK for {Session}", ctx.Session);
 
+        // Entering changes the roster and the side assignments, which the entry-game screen
+        // tracks through three separate watches.
         var watchRecipients = ctx.Hub.PublishGameEntryChanged(room);
+        ctx.Hub.PublishDecideGamePlayer(room);
+        ctx.Hub.PublishDecideGamePlayerEnv(room);
         ctx.Hub.PublishRoomUpdated(room);
         log.LogInformation(
             "pid {Pid} game entry={Entered} side={Side} room={RoomId}; watches={Watches}",
@@ -290,7 +430,7 @@ public sealed class RoomHandlers(
             _ => ctx.Fail("ERR_INVALIDROOMINFO"),
         };
 
-    private KvMessage JoinExistingRoom(
+    private KvMessage[] JoinExistingRoom(
         CommandContext ctx,
         int roomId,
         bool includeRoomId = false,
@@ -301,7 +441,7 @@ public sealed class RoomHandlers(
             roomId,
             ctx.Request.GetString("password") ?? "");
         if (joined.Status != RoomJoinStatus.Joined || joined.Room is null)
-            return RoomJoinError(ctx, joined.Status);
+            return [RoomJoinError(ctx, joined.Status)];
 
         ctx.Hub.PublishRoomJoined(joined, ctx.Session);
         log.LogInformation("pid {Pid} joined room {RoomId}", ctx.Session.Pid, joined.Room.Id);
@@ -325,6 +465,11 @@ public sealed class RoomHandlers(
                 .Set("in_port", owner.InternalPort));
         }
 
-        return response;
+        var replies = new List<KvMessage> { response };
+        // The PES2010 client arms CMD_WATCH_ROOMSTATE locally during service init,
+        // so the join response must include the current state even without a parked
+        // server-side rqid. Keep a supplied rqid for protocol variants that do park it.
+        replies.Add(ctx.Hub.BuildRoomStateUpdate(joined.Room, ctx.Session)!);
+        return replies.ToArray();
     }
 }

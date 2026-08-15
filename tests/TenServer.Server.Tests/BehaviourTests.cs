@@ -192,6 +192,457 @@ public class SessionStateTests
 public class RoomTests
 {
     [Fact]
+    public async Task Peers_receive_the_advertised_external_endpoint_for_direct_lookup()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var host = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        host.Pid = 1;
+        host.ExternalIp = "198.51.100.10";
+        host.ExternalPort = 61001;
+        host.InternalIp = "192.168.1.10";
+        host.InternalPort = 25110;
+
+        var created = await harness.DispatchAsync(host, "CMD_CREATEJOIN_ROOM");
+        var roomId = created[0].GetInt32("room_id");
+
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+        guest.ExternalIp = host.ExternalIp;
+        guest.ExternalPort = 61002;
+        guest.InternalIp = "192.168.1.20";
+        guest.InternalPort = 27414;
+        await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: request =>
+            request.Set("room_id", roomId));
+
+        var replies = await harness.DispatchAsync(guest, "CMD_GET_IPANDPORT", withFields: request =>
+            request.Set("pid", host.Pid));
+        var endpoint = Assert.Single(replies);
+
+        Assert.Equal(host.ExternalIp, endpoint.GetString("ex_ip"));
+        Assert.Equal(host.ExternalPort, endpoint.GetInt32("ex_port"));
+        Assert.Equal("192.168.1.10", endpoint.GetString("in_ip"));
+        Assert.Equal(25110, endpoint.GetInt32("in_port"));
+        Assert.Equal(host.Pid, endpoint.GetInt32("pid"));
+    }
+
+    [Fact]
+    public async Task Endpoint_watch_notifies_host_when_same_nat_guest_joins()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var host = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        host.Pid = 1;
+        host.ExternalIp = "198.51.100.10";
+        host.ExternalPort = 61001;
+        host.InternalIp = "192.168.1.10";
+        host.InternalPort = 25110;
+
+        var created = await harness.DispatchAsync(host, "CMD_CREATEJOIN_ROOM");
+        var roomId = created[0].GetInt32("room_id");
+        var initialWatch = await harness.DispatchAsync(host, "CMD_WATCH_IPANDPORT", rqid: 77);
+        Assert.Empty(initialWatch);
+
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+        guest.ExternalIp = host.ExternalIp;
+        guest.ExternalPort = 61002;
+        guest.InternalIp = "192.168.1.20";
+        guest.InternalPort = 27414;
+        await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: request =>
+            request.Set("room_id", roomId));
+
+        var pushed = new List<KvMessage>();
+        while (host.Queue.Reader.TryRead(out var item))
+            if (item.Message is { } message)
+                pushed.Add(message);
+
+        var endpoint = Assert.Single(pushed, message => message.MsgName == "CMD_WATCH_IPANDPORT");
+        Assert.Equal(77, endpoint.Rqid);
+        Assert.Equal(guest.ExternalIp, endpoint.GetString("ex_ip"));
+        Assert.Equal(guest.ExternalPort, endpoint.GetInt32("ex_port"));
+        Assert.Equal(guest.Pid, endpoint.GetInt32("pid"));
+    }
+
+    [Fact]
+    public async Task Room_updates_reach_every_in_block_client()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var host = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        host.Pid = 1;
+        var created = await harness.DispatchAsync(host, "CMD_CREATEJOIN_ROOM");
+        var roomId = created[0].GetInt32("room_id");
+
+        var observer = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        observer.Pid = 3;
+
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+        await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: request =>
+            request.Set("room_id", roomId));
+
+        Assert.True(observer.Queue.Reader.TryRead(out var packet));
+        Assert.Equal("MSG_ROOMLISTUPDATE", packet.Message?.MsgName);
+        Assert.Equal(1, packet.Message?.GetInt32("count"));
+        Assert.Equal(roomId, packet.Message?.GetList("roomList")[0].GetInt32("room_id"));
+    }
+
+    [Fact]
+    public async Task Room_deletion_reaches_every_in_block_client()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var host = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        host.Pid = 1;
+        var created = await harness.DispatchAsync(host, "CMD_CREATEJOIN_ROOM");
+        var roomId = created[0].GetInt32("room_id");
+
+        var observer = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        observer.Pid = 3;
+
+        var result = harness.Hub.LeaveRoom(host, roomId);
+        Assert.Equal(RoomLeaveStatus.Left, result.Status);
+        Assert.True(observer.Queue.Reader.TryRead(out var packet));
+        Assert.Equal("MSG_ROOMLISTDEL", packet.Message?.MsgName);
+        Assert.Equal(roomId, packet.Message?.GetInt32("rid"));
+    }
+
+    [Fact]
+    public async Task Room_state_watch_can_arm_before_join_and_ack_precedes_update()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var created = await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM");
+        var roomId = created[0].GetInt32("room_id");
+
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+        Assert.Empty(await harness.DispatchAsync(guest, "CMD_WATCH_ROOMSTATE", rqid: 88));
+
+        var replies = await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: request =>
+            request.Set("room_id", roomId));
+
+        Assert.Equal(["CMD_JOIN_ROOM", "CMD_WATCH_ROOMSTATE"],
+            replies.Select(reply => reply.MsgName).ToArray());
+        Assert.Equal(88, replies[1].Rqid);
+        Assert.Equal("WAITING", replies[1].GetString("state"));
+        Assert.Equal(owner.Pid, replies[1].GetInt32("owner_pid"));
+    }
+
+    [Fact]
+    public async Task Room_state_is_sent_as_unsolicited_update_for_local_client_watch()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var created = await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM");
+        var roomId = created[0].GetInt32("room_id");
+
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+        var replies = await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: request =>
+            request.Set("room_id", roomId));
+
+        var state = Assert.Single(replies, message => message.MsgName == "CMD_WATCH_ROOMSTATE");
+        Assert.Equal(Hub.UnsolicitedRqid, state.Rqid);
+        Assert.Equal("WAITING", state.GetString("state"));
+        Assert.Equal(owner.Pid, state.GetInt32("owner_pid"));
+    }
+
+    [Fact]
+    public async Task Room_watches_can_register_during_lobby_connection_initialization()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var session = harness.NewSession(ServiceRole.Lobby, SessionState.Connected);
+
+        Assert.Empty(await harness.DispatchAsync(session, "CMD_WATCH_ROOMSTATE", rqid: 41));
+        Assert.Empty(await harness.DispatchAsync(session, "CMD_WATCH_IPANDPORT", rqid: 42));
+    }
+
+    [Fact]
+    public async Task Room_player_watch_is_acknowledged_after_join()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var created = await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM");
+        var roomId = created[0].GetInt32("room_id");
+
+        var replies = await harness.DispatchAsync(owner, "CMD_WATCH_ROOMPLAYERLIST", withFields: request =>
+            request.Set("room_id", roomId));
+
+        var reply = Assert.Single(replies);
+        Assert.Equal("CMD_WATCH_ROOMPLAYERLIST", reply.MsgName);
+        Assert.Equal(roomId, reply.GetInt32("room_id"));
+    }
+
+    [Fact]
+    public async Task Numeric_entry_game_marks_both_room_players_ready()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var roomId = (await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM"))[0]
+            .GetInt32("room_id");
+
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+        await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: request =>
+            request.Set("room_id", roomId));
+
+        await harness.DispatchAsync(owner, "CMD_WATCH_ENTRY_GAME", rqid: 21);
+        await harness.DispatchAsync(guest, "CMD_WATCH_ENTRY_GAME", rqid: 22);
+        await harness.DispatchAsync(owner, "CMD_ENTRY_GAME", withFields: request =>
+            request.Set("entry", 1).Set("side", "HOME"));
+        await harness.DispatchAsync(guest, "CMD_ENTRY_GAME", withFields: request =>
+            request.Set("entry", 1).Set("side", "AWAY"));
+
+        var room = Assert.Single(harness.Hub.Rooms);
+        var members = room.Snapshot();
+        Assert.Equal([0, 1], members.Select(member => member.GameEntryNo).OrderBy(value => value));
+        Assert.Equal([0, 1], members.Select(member => member.GameSide).OrderBy(value => value));
+    }
+
+    [Fact]
+    public async Task Game_environment_reaches_the_other_occupant_through_its_watch()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var roomId = (await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM"))[0]
+            .GetInt32("room_id");
+
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+        await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: request =>
+            request.Set("room_id", roomId));
+        Assert.Empty(await harness.DispatchAsync(guest, "CMD_WATCH_DECIDE_GAMEENV", rqid: 55));
+
+        await harness.DispatchAsync(owner, "CMD_SET_GAMEENV", withFields: request =>
+            request.Set("game_env", new KvMessage()
+                .Set("cpuLevel", "HARD")
+                .Set("gametime", "15MINUTES")));
+
+        var pushed = new List<KvMessage>();
+        while (guest.Queue.Reader.TryRead(out var item))
+            if (item.Message is { } message)
+                pushed.Add(message);
+
+        var decided = Assert.Single(
+            pushed, message => message.MsgName == "CMD_WATCH_DECIDE_GAMEENV");
+        Assert.Equal(55, decided.Rqid);
+        var environment = Assert.IsType<KvMessage>(decided.GetValue("game_env"));
+        Assert.Equal("HARD", environment.GetString("cpuLevel"));
+        Assert.Equal("15MINUTES", environment.GetString("gametime"));
+    }
+
+    [Fact]
+    public async Task Entering_the_game_publishes_the_roster_and_side_assignments()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var roomId = (await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM"))[0]
+            .GetInt32("room_id");
+
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+        await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: request =>
+            request.Set("room_id", roomId));
+
+        await harness.DispatchAsync(owner, "CMD_WATCH_DECIDE_GAMEPLAYER", rqid: 61);
+        await harness.DispatchAsync(owner, "CMD_WATCH_DECIDE_GAMEPLAYERENV", rqid: 62);
+        await harness.DispatchAsync(owner, "CMD_ENTRY_GAME", withFields: request =>
+            request.Set("entry", 1).Set("side", "HOME"));
+        await harness.DispatchAsync(guest, "CMD_ENTRY_GAME", withFields: request =>
+            request.Set("entry", 1).Set("side", "AWAY"));
+
+        var pushed = new List<KvMessage>();
+        while (owner.Queue.Reader.TryRead(out var item))
+            if (item.Message is { } message)
+                pushed.Add(message);
+
+        var roster = pushed.Last(message => message.MsgName == "CMD_WATCH_DECIDE_GAMEPLAYER");
+        Assert.Equal(61, roster.Rqid);
+        Assert.Equal(2, roster.GetInt32("player_count"));
+        var pids = Assert.IsType<KvArray>(roster.GetValue("pid"));
+        // One entry per room slot: the two occupants, then -1 for every empty slot.
+        Assert.Equal(4, pids.Values.Count);
+        Assert.Equal([1, 2, -1, -1], pids.Values.Select(value => Convert.ToInt32(value)));
+
+        var sides = pushed.Last(message => message.MsgName == "CMD_WATCH_DECIDE_GAMEPLAYERENV");
+        Assert.Equal(62, sides.Rqid);
+        var entries = sides.GetList("sideinfo");
+        Assert.Equal(2, entries.Count);
+        var home = Assert.Single(entries, entry => entry.GetInt32("pid") == owner.Pid);
+        Assert.Equal("HOME", home.GetString("side"));
+        Assert.Equal("YES", home.GetString("sideLeader"));
+        var away = Assert.Single(entries, entry => entry.GetInt32("pid") == guest.Pid);
+        Assert.Equal("AWAY", away.GetString("side"));
+        Assert.Equal("YES", away.GetString("sideLeader"));
+    }
+
+    [Fact]
+    public async Task Leaving_notifies_the_remaining_occupant_through_the_discon_watches()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var roomId = (await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM"))[0]
+            .GetInt32("room_id");
+
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+        await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: request =>
+            request.Set("room_id", roomId));
+
+        await harness.DispatchAsync(owner, "CMD_WATCH_DISCON_PLAYERENV", rqid: 71);
+        await harness.DispatchAsync(owner, "CMD_WATCH_DISCON_PLAYERMATCH", rqid: 72);
+        await harness.DispatchAsync(owner, "CMD_ENTRY_GAME", withFields: request =>
+            request.Set("entry", 1).Set("side", "HOME"));
+        while (owner.Queue.Reader.TryRead(out _)) { }
+
+        await harness.DispatchAsync(guest, "CMD_LEAVE_ROOM");
+
+        var pushed = new List<KvMessage>();
+        while (owner.Queue.Reader.TryRead(out var item))
+            if (item.Message is { } message)
+                pushed.Add(message);
+
+        var left = Assert.Single(
+            pushed, message => message.MsgName == "CMD_WATCH_DISCON_PLAYERENV");
+        Assert.Equal(71, left.Rqid);
+        Assert.Equal(guest.Pid, left.GetInt32("pid"));
+
+        // The capital I in sideInfo is the client's own spelling for this command.
+        var sides = Assert.Single(
+            pushed, message => message.MsgName == "CMD_WATCH_DISCON_PLAYERMATCH");
+        Assert.Equal(72, sides.Rqid);
+        var remaining = Assert.Single(sides.GetList("sideInfo"));
+        Assert.Equal(owner.Pid, remaining.GetInt32("pid"));
+    }
+
+    [Fact]
+    public async Task Only_the_owner_can_rename_the_room()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var roomId = (await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM"))[0]
+            .GetInt32("room_id");
+
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+        await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: request =>
+            request.Set("room_id", roomId));
+
+        var refused = (await harness.DispatchAsync(guest, "CMD_CHANGE_ROOMNAME",
+                withFields: request => request.Set("name", "Guest Rename")))
+            .Single(message => message.MsgName == "CMD_CHANGE_ROOMNAME");
+        Assert.Equal("ERR_NOTROOMOWNER", refused.GetString("result"));
+
+        var renamed = (await harness.DispatchAsync(owner, "CMD_CHANGE_ROOMNAME",
+                withFields: request => request.Set("name", "Owner Rename")))
+            .Single(message => message.MsgName == "CMD_CHANGE_ROOMNAME");
+        Assert.Equal("NOERR", renamed.GetString("result"));
+        Assert.Equal("Owner Rename", harness.Hub.RequireRoom(roomId).Name);
+    }
+
+    [Fact]
+    public async Task Only_the_owner_can_kick_a_room_member()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var roomId = (await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM"))[0]
+            .GetInt32("room_id");
+
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+        await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: request =>
+            request.Set("room_id", roomId));
+
+        var refused = (await harness.DispatchAsync(guest, "CMD_KICK_ROOMMEMBER",
+                withFields: request => request.Set("target_pid", owner.Pid)))
+            .Single(message => message.MsgName == "CMD_KICK_ROOMMEMBER");
+        Assert.Equal("ERR_NOTROOMOWNER", refused.GetString("result"));
+
+        var kicked = (await harness.DispatchAsync(owner, "CMD_KICK_ROOMMEMBER",
+                withFields: request => request.Set("target_pid", guest.Pid)))
+            .Single(message => message.MsgName == "CMD_KICK_ROOMMEMBER");
+        Assert.Equal("NOERR", kicked.GetString("result"));
+        Assert.Null(guest.RoomId);
+        Assert.Equal(SessionState.InBlock, guest.State);
+        Assert.Equal(owner.Pid, Assert.Single(harness.Hub.RequireRoom(roomId).Snapshot()).Pid);
+    }
+
+    [Fact]
+    public async Task Guest_toggle_shows_up_in_the_room_entry()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var roomId = (await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM"))[0]
+            .GetInt32("room_id");
+
+        await harness.DispatchAsync(owner, "CMD_SET_GUEST", withFields: request =>
+            request.Set("has_guestplayer", "YES"));
+
+        Assert.True(owner.HasGuestPlayer);
+        var entry = RoomPresenter.ListEntry(harness.Hub.RequireRoom(roomId));
+        var gamer = Assert.Single(entry.GetList("gamer"));
+        // Written as a bool, which the writer renders as the NO/YES the client's enum
+        // type 0x36 accepts.
+        Assert.Equal(true, gamer.GetValue("has_guestplayer"));
+        Assert.Contains("has_guestplayer=\"YES\"", harness.Render(entry));
+    }
+
+    // SETENV is the two-player pre-match state: PublishRoomJoined only advances a room
+    // once a second occupant arrives. A room the owner is still alone in stays WAITING
+    // however it is configured.
+    [Fact]
+    public async Task Setting_game_environment_alone_does_not_advance_room_state()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var roomId = (await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM"))[0]
+            .GetInt32("room_id");
+
+        var room = Assert.Single(harness.Hub.Rooms);
+        Assert.Equal("WAITING", room.Status);
+
+        await harness.DispatchAsync(owner, "CMD_SET_GAMEENV", withFields: request =>
+            request.Set("game_env", new KvMessage()
+                .Set("cpuLevel", "NORMAL")
+                .Set("gametime", "10MINUTES")
+                .Set("injury", "NO")
+                .Set("condition", "RANDOM")
+                .Set("ball_type", 7)
+                .Set("exGame", "YES")
+                .Set("pkOnOff", "YES")
+                .Set("substitution", 3)
+                .Set("limitTime", "MIDDLE")));
+
+        Assert.Equal(roomId, room.Id);
+        Assert.Equal("WAITING", room.Status);
+    }
+
+    [Fact]
     public async Task Room_member_list_is_built_from_live_sessions()
     {
         await using var harness = await ServerHarness.CreateAsync();
@@ -479,6 +930,37 @@ public class GameEnvironmentTests
             r.Set("game_env", new KvMessage().Set("cpuLevel", "HARD")));
 
         Assert.Equal("NOROOM", replies[0].GetString("reason"));
+    }
+
+    [Fact]
+    public async Task Game_environment_moves_room_to_setenv_and_join_keeps_that_state()
+    {
+        await using var harness = await ServerHarness.CreateAsync();
+        var owner = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        owner.Pid = 1;
+        var guest = harness.NewSession(ServiceRole.Lobby, SessionState.InBlock);
+        guest.Pid = 2;
+
+        var created = await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM", withFields: r => r
+            .Set("name", "Test Room")
+            .Set("match_type", "OC_FREE")
+            .Set("team_category", "ALL")
+            .Set("max_players", 4)
+            .Set("enable_guest", "YES"));
+        var roomId = created[0].GetInt32("room_id");
+
+        await harness.DispatchAsync(owner, "CMD_SET_GAMEENV", withFields: r =>
+            r.Set("game_env", new KvMessage().Set("gametime", "10MINUTES")));
+        var room = harness.Hub.RequireRoom(roomId);
+        Assert.Equal("WAITING", room.Status);
+
+        var replies = await harness.DispatchAsync(guest, "CMD_JOIN_ROOM", withFields: r =>
+            r.Set("room_id", roomId));
+
+        Assert.Equal("SETENV", room.Status);
+        Assert.Contains(replies, message => message.MsgName == "CMD_JOIN_ROOM");
+        Assert.Contains(replies, message =>
+            message.MsgName == "CMD_WATCH_ROOMSTATE" && message.GetString("state") == "SETENV");
     }
 }
 

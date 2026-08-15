@@ -58,7 +58,7 @@ public static class RoomPresenter
             .Set("pid", member.Pid)
             .Set("is_room_owner", member.Pid == room.OwnerPid)
             .Set("is_watcher", false)
-            .Set("has_guestplayer", false)
+            .Set("has_guestplayer", member.HasGuestPlayer)
             .Set("enter_no", member.RoomEntryNo)
             .Set("game_no", member.GameEntryNo);
 

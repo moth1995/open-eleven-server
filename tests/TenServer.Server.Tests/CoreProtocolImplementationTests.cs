@@ -127,7 +127,10 @@ public class RoomProtocolCommandTests
                 .Set("enable_guest", "YES")));
         var roomId = created.GetInt32("room_id");
 
-        var visible = await harness.DispatchAsync(sameBlock, "MSG_REQROOMLIST");
+        var visible = (await harness.DispatchAsync(sameBlock, "MSG_REQROOMLIST"))
+            .Where(message => message.MsgName is "MSG_REQROOMLIST" or "MSG_ROOMLISTSTART"
+                or "MSG_ROOMLIST" or "MSG_ROOMLISTEND")
+            .ToArray();
         Assert.Equal(
             ["MSG_REQROOMLIST", "MSG_ROOMLISTSTART", "MSG_ROOMLIST", "MSG_ROOMLISTEND"],
             visible.Select(r => r.MsgName!).ToArray());
@@ -187,16 +190,18 @@ public class RoomProtocolCommandTests
             withFields: r => r.Set("name", "Private").Set("password", "CaseSensitive").Set("max_players", 2)));
         var roomId = created.GetInt32("room_id");
 
-        var wrongPassword = Assert.Single(await harness.DispatchAsync(
+        var wrongPassword = (await harness.DispatchAsync(
             guest,
             "CMD_JOIN_ROOM",
-            withFields: r => r.Set("room_id", roomId).Set("password", "casesensitive")));
+            withFields: r => r.Set("room_id", roomId).Set("password", "casesensitive")))
+            .Single(message => message.MsgName == "CMD_JOIN_ROOM");
         Assert.Equal("ERR_INVALIDROOMINFO", wrongPassword.GetString("result"));
 
-        var joined = Assert.Single(await harness.DispatchAsync(
+        var joined = (await harness.DispatchAsync(
             guest,
             "CMD_JOIN_ROOM",
-            withFields: r => r.Set("room_id", roomId).Set("password", "CaseSensitive")));
+            withFields: r => r.Set("room_id", roomId).Set("password", "CaseSensitive")))
+            .Single(message => message.MsgName == "CMD_JOIN_ROOM");
         Assert.Equal("NOERR", joined.GetString("result"));
         Assert.Equal(SessionState.InRoom, guest.State);
         Assert.Equal(roomId, guest.RoomId);
@@ -220,18 +225,20 @@ public class RoomProtocolCommandTests
             memberList.GetList("list"),
             member => Assert.Equal(owner.Pid, member.GetInt32("room_pid")));
 
-        var endpoint = Assert.Single(await harness.DispatchAsync(
-            guest, "CMD_GET_IPANDPORT", withFields: r => r.Set("pid", owner.Pid)));
+        var endpoint = (await harness.DispatchAsync(
+            guest, "CMD_GET_IPANDPORT", withFields: r => r.Set("pid", owner.Pid)))
+            .Single(message => message.MsgName == "CMD_GET_IPANDPORT");
         Assert.Equal(owner.Pid, endpoint.GetInt32("pid"));
         Assert.Equal("203.0.113.1", endpoint.GetString("ex_ip"));
         Assert.Equal(5730, endpoint.GetInt32("ex_port"));
         Assert.Equal("192.168.1.10", endpoint.GetString("in_ip"));
         Assert.Equal(5731, endpoint.GetInt32("in_port"));
 
-        var full = Assert.Single(await harness.DispatchAsync(
+        var full = (await harness.DispatchAsync(
             third,
             "CMD_JOIN_ROOM",
-            withFields: r => r.Set("room_id", roomId).Set("password", "CaseSensitive")));
+            withFields: r => r.Set("room_id", roomId).Set("password", "CaseSensitive")))
+            .Single(message => message.MsgName == "CMD_JOIN_ROOM");
         Assert.Equal("ERR_ROOMISFULL", full.GetString("result"));
     }
 
@@ -327,8 +334,9 @@ public class RoomProtocolCommandTests
         await harness.DispatchAsync(host, "CMD_CREATEJOIN_ROOM");
 
         Assert.Equal(SessionState.InBlock, browsing.State);
-        var endpoint = Assert.Single(await harness.DispatchAsync(
-            browsing, "CMD_GET_IPANDPORT", withFields: r => r.Set("pid", host.Pid)));
+        var endpoint = (await harness.DispatchAsync(
+            browsing, "CMD_GET_IPANDPORT", withFields: r => r.Set("pid", host.Pid)))
+            .Single(message => message.MsgName == "CMD_GET_IPANDPORT");
         Assert.Equal("NOERR", endpoint.GetString("result"));
         Assert.Equal(host.Pid, endpoint.GetInt32("pid"));
         Assert.Equal("203.0.113.30", endpoint.GetString("ex_ip"));
