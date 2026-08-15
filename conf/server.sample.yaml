@@ -7,10 +7,10 @@
 # placeholders — the only one you must change is AdvertiseIp.
 #
 # Anything in this file can also be overridden by environment variables using a
-# TENSERVER_ prefix and __ for nesting, which is how the launch profiles work:
+# OpenEleven_ prefix and __ for nesting, which is how the launch profiles work:
 #
-#     TENSERVER_Server__AdvertiseIp=192.168.1.20
-#     TENSERVER_Server__Database__Provider=MySql
+#     OpenEleven_Server__AdvertiseIp=192.168.1.20
+#     OpenEleven_Server__Database__Provider=MySql
 
 Server:
   # Written into svraddr of every server-list entry, so it must be the address the
@@ -47,7 +47,7 @@ Server:
       Port: 28011
       MaxPlayers: 1000
     - Role: Lobby
-      Name: TenServer      # shown to players as the server name
+      Name: OpenEleven      # shown to players as the server name
       Gid: 3
       Port: 28012
       MaxPlayers: 1000
@@ -83,13 +83,6 @@ Server:
       MaxPlayers: 100
       Type: open
 
-  Crypto:
-    # Not secrets: these live in the game client and every copy already has them.
-    # They are per title, so swapping titles means swapping both values and setting
-    # GameProfile to match. The values below are the PES2010 PC ones.
-    XorKey: "5B9F2E64"
-    BlowfishKey: "D8890AF066C96B40D701AEFC436FF9FEC98998167A74483D3914730C5C01C03CE28E86E589C4A185F8540651D2ECA36B5C1A40EEC5E9DAAE"
-
   Https:
     Enabled: true
     # Leave empty to skip port 443 entirely. There is no plaintext fallback: with a
@@ -100,9 +93,9 @@ Server:
   Database:
     Provider: Sqlite            # Sqlite | MySql
     # SQLite needs no setup and is created and seeded on first run. For MySQL use:
-    #   ConnectionString: "Server=localhost;Port=3306;Database=tenserver;User=…;Password=…"
+    #   ConnectionString: "Server=localhost;Port=3306;Database=OpenEleven;User=…;Password=…"
     # Put real credentials in conf/server.local.yaml (also gitignored) rather than here.
-    ConnectionString: "Data Source=data/tenserver.db"
+    ConnectionString: "Data Source=data/OpenEleven.db"
     AutoCreate: true
     Seed: true
 

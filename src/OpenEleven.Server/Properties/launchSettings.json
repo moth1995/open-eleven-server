@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "Server (game ports, loopback)": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "dotnetRunMessages": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "OPENELEVEN_Server__AdvertiseIp": "127.0.0.1"
+      }
+    },
+
+    "Server (game ports)": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "dotnetRunMessages": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+
+    "Server (game ports + MySQL)": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "dotnetRunMessages": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "OPENELEVEN_Server__Database__Provider": "MySql",
+        "OPENELEVEN_Server__Database__ConnectionString": "Server=localhost;Port=3306;Database=openeleven;User=openeleven;Password=openeleven;"
+      }
+    },
+
+    "Server (dev ports, no elevation)": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "dotnetRunMessages": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "OPENELEVEN_Server__AdvertiseIp": "127.0.0.1",
+        "OPENELEVEN_Server__Listen__Http": "8080",
+        "OPENELEVEN_Server__Listen__Https": "8443"
+      }
+    }
+  }
+}

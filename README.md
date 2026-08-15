@@ -1,4 +1,4 @@
-# TenServer
+# OpenEleven
 
 Reverse-engineered online server for Pro Evolution Soccer 2010 (PC). C# / .NET 9.
 
@@ -10,12 +10,12 @@ so the C# server is checked against the exact bytes the Python one produced.
 
 ```
 src/
-  TenServer.Protocol/     XOR cipher, Blowfish-ECB, packet framing, key=value grammar codec
-  TenServer.Data/         EF Core entities, DbContext, repositories, seeding
-  TenServer.Server/       Host, per-service TCP listeners, dispatch, handlers, HTTP surface
+  OpenEleven.Protocol/     XOR cipher, Blowfish-ECB, packet framing, key=value grammar codec
+  OpenEleven.Data/         EF Core entities, DbContext, repositories, seeding
+  OpenEleven.Server/       Host, per-service TCP listeners, dispatch, handlers, HTTP surface
 tests/
-  TenServer.Protocol.Tests/   Codec round-trips + byte-for-byte goldens from main.py
-  TenServer.Server.Tests/     Handler behaviour + reference parity through the real DI stack
+  OpenEleven.Protocol.Tests/   Codec round-trips + byte-for-byte goldens from main.py
+  OpenEleven.Server.Tests/     Handler behaviour + reference parity through the real DI stack
 conf/server.yaml        All configuration
 ```
 
@@ -23,7 +23,7 @@ Kept locally but **not tracked** (see `.gitignore`), so a fresh clone will not h
 them: `main.py` (the reference implementation — read only, never edited), `tools/`
 (`generate_goldens.py`, `probe_client.py` — both import `main.py`), and `docker/`.
 The golden vectors those tools produce *are* tracked, at
-`tests/TenServer.Protocol.Tests/goldens.json`, so the test suite runs without them.
+`tests/OpenEleven.Protocol.Tests/goldens.json`, so the test suite runs without them.
 
 ## Run
 
@@ -43,7 +43,7 @@ which is only right when the resolved NIC is the one the client can see.
 
 ### Visual Studio
 
-Set **TenServer.Server** as the startup project (right-click → Set as Startup Project) and
+Set **OpenEleven.Server** as the startup project (right-click → Set as Startup Project) and
 press F5. Pick a profile from the dropdown next to the play button:
 
 | Profile | HTTP / HTTPS | `AdvertiseIp` | Notes |
@@ -65,15 +65,15 @@ implicit, keeping the payload identical to the reference server). Whether the cl
 accepts an explicit port in those URLs is unconfirmed — use a game-ports profile when
 driving the real game.
 
-Profiles are in `src/TenServer.Server/Properties/launchSettings.json`; they set only
-`TENSERVER_`-prefixed environment variables, so they layer over `conf/server.yaml` without
+Profiles are in `src/OpenEleven.Server/Properties/launchSettings.json`; they set only
+`OpenEleven_`-prefixed environment variables, so they layer over `conf/server.yaml` without
 duplicating it.
 
 ### Command line
 
 ```bash
-dotnet run --project src/TenServer.Server
-dotnet run --project src/TenServer.Server -- --config conf/server.yaml   # explicit config
+dotnet run --project src/OpenEleven.Server
+dotnet run --project src/OpenEleven.Server -- --config conf/server.yaml   # explicit config
 dotnet test                                                            # 60 tests
 ```
 
@@ -122,11 +122,11 @@ Two consequences of the split, both handled in code:
 ## Configuration
 
 `conf/server.yaml`, overridable by `conf/server.local.yaml` and then by environment
-variables using a `TENSERVER_` prefix and `__` for nesting:
+variables using a `OpenEleven_` prefix and `__` for nesting:
 
 ```bash
-TENSERVER_Server__AdvertiseIp=192.168.1.20
-TENSERVER_Server__Database__Provider=MySql
+OpenEleven_Server__AdvertiseIp=192.168.1.20
+OpenEleven_Server__Database__Provider=MySql
 ```
 
 Keys worth knowing:
@@ -136,7 +136,6 @@ Keys worth knowing:
 | `AdvertiseIp` | Written into every `svraddr`. `auto` resolves the primary NIC. A wrong value sends the client somewhere unreachable — this is the most common misconfiguration. |
 | `Lobbies` | The blocks offered by `CMD_GET_BLOCKLIST`, **maximum 10**. The client joins one by its **position** in this list, so reordering changes what a running client selects; set `Id` explicitly to keep occupancy bookkeeping stable across a reorder. |
 | `Protocol.RequireRegisteredAccount` | Refuse a client that matches no registered account. A client that does match always has its serial checked regardless. |
-| `Crypto.XorKey` / `BlowfishKey` | Per-game-title keys. Swap both for PES2008. |
 | `Protocol.EnforceSessionState` | Rejects commands that arrive before their stage instead of running them against half-initialised state. |
 | `Protocol.EmitUnconfirmedMessages` | Messages whose names are inferred rather than captured. Off by default: an unexpected message can crash the client. |
 | `Database.Provider` | `Sqlite` for a zero-infrastructure dev run, `MySql` for deployment. |
@@ -228,7 +227,7 @@ Then add a `[Command]` method for it.
 The game has no registration flow, so accounts are created out of band.
 
 **In a browser:** open `http://<server>/register` — a Razor page
-(`src/TenServer.Server/Pages/Register.cshtml`, styled by `wwwroot/css/register.css`). It asks
+(`src/OpenEleven.Server/Pages/Register.cshtml`, styled by `wwwroot/css/register.css`). It asks
 for the Game ID, a password twice, and the serial, then posts a plain form and hashes the
 password server-side. No JavaScript at all, and nothing loaded off this machine — the game
 box has no internet route through this server.
@@ -290,7 +289,7 @@ server publicly.
 
 ## Database
 
-SQLite by default (`data/tenserver.db`, created and seeded on first run), MySQL in Docker.
+SQLite by default (`data/OpenEleven.db`, created and seeded on first run), MySQL in Docker.
 Tables: `Accounts`, `Players`, `PlayerStats`, `Matches`, `Information`.
 
 Blocks are **not** a table — they come from the `Lobbies` config section, because the list
@@ -315,7 +314,7 @@ address — otherwise the server list hands the client an address it cannot reac
 
 - **Golden vectors** — `python tools/generate_goldens.py` imports `main.py` and dumps
   inner bodies, Blowfish blocks, complete wire frames and response strings to
-  `tests/TenServer.Protocol.Tests/goldens.json`. The C# tests assert byte equality against
+  `tests/OpenEleven.Protocol.Tests/goldens.json`. The C# tests assert byte equality against
   them, including `CMD_GET_PLAYERINFO`, which is the largest response the server sends.
 - **Behaviour tests** run the real DI stack against a throwaway SQLite file, covering
   dispatch, state gating, identity sharing across ports, and room membership.
