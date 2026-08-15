@@ -10,6 +10,7 @@ public sealed class CommandContext(
     Hub hub,
     KvMessage request,
     string msg,
+    GameProfile profile,
     IServiceProvider services,
     CancellationToken cancellationToken)
 {
@@ -19,6 +20,9 @@ public sealed class CommandContext(
     public string Msg { get; } = msg;
     public int Rqid { get; } = request.Rqid;
     public ServiceRole Role => Session.Role;
+
+    /// <summary>The title this process serves, for handlers with a small per-title delta.</summary>
+    public GameProfile Profile { get; } = profile;
 
     /// <summary>Scoped provider for this one command. Do not capture it past the call.</summary>
     public IServiceProvider Services { get; } = services;

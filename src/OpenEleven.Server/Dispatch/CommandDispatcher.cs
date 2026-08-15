@@ -13,6 +13,7 @@ public sealed class CommandDispatcher(
     Hub hub,
     UnknownCommandLog unknownCommands,
     IOptionsMonitor<ServerOptions> options,
+    GameProfile profile,
     ILogger<CommandDispatcher> log)
 {
     public async ValueTask DispatchAsync(Session session, KvMessage request, CancellationToken ct)
@@ -64,7 +65,7 @@ public sealed class CommandDispatcher(
         }
 
         await using var scope = scopeFactory.CreateAsyncScope();
-        var context = new CommandContext(session, hub, request, msg, scope.ServiceProvider, ct);
+        var context = new CommandContext(session, hub, request, msg, profile, scope.ServiceProvider, ct);
         var handler = scope.ServiceProvider.GetRequiredService(entry.HandlerType);
 
         KvMessage[] replies;
