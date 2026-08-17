@@ -5,6 +5,10 @@
     <OutputType>Library</OutputType>
     <RootNamespace>OpenEleven.Server</RootNamespace>
     <UserSecretsId>OpenEleven</UserSecretsId>
+    <!-- wwwroot here is the whole site's static content for every title exe, not a
+         reusable component library, so serve it at the root instead of namespaced
+         under /_content/OpenEleven.Server/. -->
+    <StaticWebAssetBasePath>/</StaticWebAssetBasePath>
   </PropertyGroup>
 
   <ItemGroup>

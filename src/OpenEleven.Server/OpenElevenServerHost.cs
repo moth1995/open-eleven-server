@@ -25,6 +25,11 @@ public static class OpenElevenServerHost
     {
         var builder = WebApplication.CreateBuilder(args);
 
+        // wwwroot lives in this shared library, not in the per-title exe, so Static Web
+        // Assets must be loaded explicitly: ASP.NET Core only auto-loads them when
+        // ASPNETCORE_ENVIRONMENT=Development, which the title exes don't set.
+        builder.WebHost.UseStaticWebAssets();
+
         // Configuration: YAML file, an optional local override, then OPENELEVEN_-prefixed
         // environment variables (OPENELEVEN_Server__Database__ConnectionString and friends).
         var configPath = GetConfigPath(args)
