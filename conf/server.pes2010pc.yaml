@@ -9,8 +9,8 @@ Server:
   Listen:
     Host: 0.0.0.0
     # Per-title HTTP/HTTPS so all four titles can run side-by-side on one host.
-    Http: 8080
-    Https: 8443
+    Http: 80
+    Https: 443
     Backlog: 128
     IdleTimeoutSeconds: 300
 
