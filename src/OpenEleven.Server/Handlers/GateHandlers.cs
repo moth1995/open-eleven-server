@@ -140,6 +140,11 @@ public sealed class GateHandlers(
                 System.Text.Encoding.UTF8.GetByteCount(Web.GameEndpoints.EulaText(options.CurrentValue, lang))));
             entries.Add(UrlEntry("RANK_WEEK", $"{host}/ranking", 0));
 
+            // The head-to-head screens of a community. The client puts commu_id=.. straight after
+            // the url, so each ends in "?".
+            entries.Add(UrlEntry("COMMU_MEMBERS_VS", $"{host}/commu_members_vs?", 0));
+            entries.Add(UrlEntry("COMMU_TEAM_VS", $"{host}/commu_team_vs?", 0));
+
             foreach (var url in options.CurrentValue.Urls)
             {
                 entries.RemoveAll(e => e.GetString("type") == url.Type);

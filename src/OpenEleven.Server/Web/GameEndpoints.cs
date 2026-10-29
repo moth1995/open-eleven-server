@@ -85,6 +85,32 @@ public static class GameEndpoints
             return Results.Text(text, "text/plain", Encoding.UTF8);
         }).RequireRateLimiting(HttpRateLimits.Ranking);
 
+        // The head-to-head screens of a community (COMMU_MEMBERS_VS and COMMU_TEAM_VS urls): the
+        // client appends commu_id=..&base_pid=..&oppo_pid=.. to the url, and the body it gets back
+        // is the reply itself (see CommunityVersus).
+        foreach (var (path, teams) in new[] { ("/commu_members_vs", false), ("/commu_team_vs", true) })
+        {
+            app.MapMethods(path, ["GET", "POST"], async (HttpContext http, OpenEleven.Data.GameDbContext db) =>
+            {
+                var query = http.Request.QueryString.Value ?? "";
+                if (HttpMethods.IsPost(http.Request.Method))
+                {
+                    if (http.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+                        limit.MaxRequestBodySize = 4096;
+                    using var reader = new StreamReader(http.Request.Body, Encoding.ASCII);
+                    var buffer = new char[4096];
+                    var body = new string(buffer, 0, await reader.ReadBlockAsync(buffer, http.RequestAborted));
+                    if (body.Length > 0)
+                        query = body;
+                }
+
+                var text = teams
+                    ? await State.CommunityVersus.TeamsAsync(db, query, http.RequestAborted)
+                    : await State.CommunityVersus.MembersAsync(db, query, http.RequestAborted);
+                return Results.Text(text, "text/plain", Encoding.UTF8);
+            }).RequireRateLimiting(HttpRateLimits.Ranking);
+        }
+
         // The terms screen: the client GETs the EULA_PES url and shows the body (read_buffer="...").
         // The url list puts the client's language in it (?lang=SP).
         app.MapMethods("/eula_pes.txt", ["GET", "HEAD"], (HttpContext http, IOptionsMonitor<ServerOptions> options) =>
