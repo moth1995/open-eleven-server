@@ -232,6 +232,50 @@ public sealed class Hub(ILogger<Hub> log, IOptionsMonitor<ServerOptions> options
 
     // ---- rooms ------------------------------------------------------------
 
+    /// <summary>
+    /// A community's match rooms live in a block of their own: the client opens the community
+    /// room list and creates rooms there without ever joining a lobby, so the community stands
+    /// in for one. Ids start below the quick match block (-1) and can never be a lobby's.
+    /// </summary>
+    public static int CommunityBlockId(int communityId) => -1000 - communityId;
+
+    public static bool IsCommunityBlock(int? blockId) => blockId is <= -1000;
+
+    /// <summary>League matches offered with a room and not yet played or cancelled, by fixture id.</summary>
+    public System.Collections.Concurrent.ConcurrentDictionary<int, CommunityMatchOffer> CommunityOffers { get; } = new();
+
+    /// <summary>The community a block stands for, 0 for a real block.</summary>
+    public static int CommunityOfBlock(int blockId) => blockId <= -1000 ? -1000 - blockId : 0;
+
+    /// <summary>Puts the session in the community's block, unless it is in a lobby already.</summary>
+    public void EnterCommunityBlock(Session session, int communityId)
+    {
+        if (session.BlockId is not null && !IsCommunityBlock(session.BlockId))
+            return;
+
+        if (session.RoomId is { } room && FindRoom(room)?.BlockId != CommunityBlockId(communityId))
+            LeaveRoom(session, room);
+
+        session.BlockId = CommunityBlockId(communityId);
+        if (session.State < SessionState.InBlock)
+            session.State = SessionState.InBlock;
+    }
+
+    /// <summary>Takes the session out of its community block, and out of the room it has there.</summary>
+    public void LeaveCommunityBlock(Session session)
+    {
+        if (!IsCommunityBlock(session.BlockId))
+            return;
+
+        if (session.RoomId is { } room)
+            LeaveRoom(session, room);
+
+        session.BlockId = null;
+        session.RoomListWatch = session.BlockPlayerWatch = null;
+        if (session.State == SessionState.InBlock)
+            session.State = SessionState.PlayerSelected;
+    }
+
     public IReadOnlyList<Room> Rooms => _rooms.Values.ToArray();
 
     public IReadOnlyList<Room> RoomsFor(Session session)

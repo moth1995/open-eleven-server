@@ -71,12 +71,27 @@ public sealed class Session
     public WatchListSubscription? BlockPlayerWatch { get; set; }
     public WatchListSubscription? RoomPlayerWatch { get; set; }
 
+    /// <summary>The open community's member list and league member list (PES 2011 and later community screens).</summary>
+    public WatchListSubscription? CommunityMemberWatch { get; set; }
+    public WatchListSubscription? LeagueMemberWatch { get; set; }
+
     /// <summary>PES2010's friends-screen watches; changes push under the same names.</summary>
     public int? FriendListWatchRqid { get; set; }
     public int? FriendRequestWatchRqid { get; set; }
 
     public int? BlockId { get; set; }
     public int? RoomId { get; set; }
+
+    /// <summary>The community CMD_SET_CURRENT_COMMU chose (PES 2011); the commands that name none act on it.</summary>
+    public int? CurrentCommuId { get; set; }
+
+    /// <summary>The league CMD_JOIN_COMMU_LEAGUE opened inside <see cref="CurrentCommuId"/>.</summary>
+    public int? CurrentCompeId { get; set; }
+
+    /// <summary>The parked CMD_WATCH_COMMU_MATCH (a league match offered to this player) and CMD_WATCH_COMMU_MATCH_WAITING (answers to their own offer); pushes reuse these rqids.</summary>
+    public int? CommunityMatchWatchRqid { get; set; }
+
+    public int? CommunityMatchWaitingRqid { get; set; }
     public int RoomEntryNo { get; set; } = -1;
     public int GameEntryNo { get; set; } = -1;
     public int GameSide { get; set; } = -1;
