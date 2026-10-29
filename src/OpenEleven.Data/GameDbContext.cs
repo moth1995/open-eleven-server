@@ -21,6 +21,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<ShortMail> ShortMails => Set<ShortMail>();
     public DbSet<WeeklyRankingEntry> WeeklyRankings => Set<WeeklyRankingEntry>();
     public DbSet<ServerSetting> Settings => Set<ServerSetting>();
+    public DbSet<PlayerAvatar> Avatars => Set<PlayerAvatar>();
     public DbSet<Community> Communities => Set<Community>();
     public DbSet<CommunityMember> CommunityMembers => Set<CommunityMember>();
     public DbSet<CommunityLeague> CommunityLeagues => Set<CommunityLeague>();
@@ -105,6 +106,11 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         });
 
         b.Entity<ServerSetting>(e => e.HasKey(x => x.Key));
+        b.Entity<PlayerAvatar>(e =>
+        {
+            e.HasKey(x => x.Pid);
+            e.Property(x => x.Pid).ValueGeneratedNever();
+        });
 
         b.Entity<Community>(e =>
         {
@@ -124,6 +130,12 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.CompeId);
+        });
+
+        b.Entity<CompetitionEntry>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Pid, x.CompeId }).IsUnique();
         });
 
         b.Entity<CommunityLeagueCell>(e =>
