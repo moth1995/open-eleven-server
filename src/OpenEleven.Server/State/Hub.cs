@@ -1036,9 +1036,12 @@ public sealed class Hub(ILogger<Hub> log, IOptionsMonitor<ServerOptions> options
         TextChatChannel channel,
         string statement,
         IReadOnlySet<int> excludedPids,
-        Guid? except = null)
+        Guid? except = null,
+        IReadOnlyList<int>? communityMembers = null)
     {
-        var (scope, pidsInScope) = ResolveChatScope(sender, channel);
+        var (scope, pidsInScope) = channel is TextChatChannel.Community or TextChatChannel.CommunityLeague
+            ? ("community", communityMembers ?? [])
+            : ResolveChatScope(sender, channel);
 
         var sent = 0;
         var unsolicited = 0;
@@ -1144,6 +1147,7 @@ public sealed class Hub(ILogger<Hub> log, IOptionsMonitor<ServerOptions> options
             TextChatChannel.TeamQuick => "TEAM_QUICK",
             TextChatChannel.Competition => "COMPETITION",
             TextChatChannel.Community => "COMMUNITY",
+            TextChatChannel.CommunityLeague => "COMMUNITY_LEAGUE",
             _ => throw new ArgumentOutOfRangeException(nameof(channel)),
         };
 
