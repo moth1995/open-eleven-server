@@ -74,6 +74,7 @@ public sealed class MatchResults(
                 HomePid = lineup.Home,
                 AwayPid = lineup.Away,
                 Ranked = room.MatchType == "OC_RANKING",
+                CommuId = Hub.CommunityOfBlock(room.BlockId),
                 Completed = false,
             };
             db.Matches.Add(record);
@@ -85,6 +86,24 @@ public sealed class MatchResults(
         {
             room.MatchIdGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Adds an event line to a match that is already saved. The clients send some match reports
+    /// (CMD_SET_COMMU_MATCHINFO, the possession and shots) a second after the final whistle, when the
+    /// record is written, so they cannot ride on the in-memory sheet. A line the record already has
+    /// is not added twice.
+    /// </summary>
+    public async Task AppendEventAsync(long matchId, string line)
+    {
+        using var scope = scopes.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GameDbContext>();
+        var record = await db.Matches.FindAsync(matchId);
+        if (record is null || record.Events.Split('\n').Contains(line))
+            return;
+
+        record.Events = record.Events.Length == 0 ? line : record.Events + "\n" + line;
+        await db.SaveChangesAsync();
     }
 
     /// <summary>
@@ -163,6 +182,7 @@ public sealed class MatchResults(
             record.Disconnected = leaverPid is not null || noMatch;
             record.DisconnectedPid = leaverPid;
             record.Ranked = ranked;
+            record.CommuId = Hub.CommunityOfBlock(room.BlockId);
             record.Rated = rated;
             record.Settings = new KvWriter().Write(settings).TrimEnd('\0');
             record.HomePeriods = MatchSheet.Format(sheet.Home);
@@ -192,6 +212,8 @@ public sealed class MatchResults(
             }
 
             await db.SaveChangesAsync();
+            room.SettledMatchId = (int)record.Id;
+            await RecordLeagueMatchAsync(db, room, lineup, record, noMatch);
             if (rated)
                 await RankSystem.RecomputeRanksAsync(db);
             room.LastResults = results;
@@ -208,6 +230,30 @@ public sealed class MatchResults(
         {
             log.LogError(ex, "Could not record the result of room {RoomId}", room.Id);
         }
+    }
+
+    /// <summary>
+    /// A room that played a league fixture hands its score to the league. The room's home side is
+    /// whoever the lineup puts there, so the score is swapped when that is the fixture's away cell.
+    /// </summary>
+    private static async Task RecordLeagueMatchAsync(GameDbContext db, Room room, (int Home, int Away) lineup, MatchRecord record, bool noMatch)
+    {
+        if (room.LeagueMatchId == 0 || noMatch)
+            return;
+
+        var fixture = await db.CommunityLeagueMatches.FirstOrDefaultAsync(m => m.Id == room.LeagueMatchId);
+        if (fixture is null || fixture.Finished)
+            return;
+
+        var homeCell = await db.CommunityLeagueMembers
+            .Where(m => m.CompeId == fixture.CompeId && m.Pid == lineup.Home).Select(m => m.CellId).FirstOrDefaultAsync();
+        var swapped = homeCell != fixture.HomeCellId;
+        (fixture.HomePeriods, fixture.AwayPeriods) = swapped ? (record.AwayPeriods, record.HomePeriods) : (record.HomePeriods, record.AwayPeriods);
+        (fixture.HomeGoals, fixture.AwayGoals) = swapped ? (record.AwayScore, record.HomeScore) : (record.HomeScore, record.AwayScore);
+        fixture.Finished = true;
+        fixture.PlayedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        fixture.MatchRecordId = record.Id;
+        await db.SaveChangesAsync();
     }
 
     /// <summary>Both players reported the same para_hash at login (unknown counts as same).</summary>
