@@ -112,6 +112,13 @@ public sealed class Player
     public string QuickMatchOptions { get; set; } = "";
 
     /// <summary>
+    /// PES 2011 game plan (CMD_SET_GAMEPLAN): the client's formation/tactics block as the hex
+    /// string it sent, kept verbatim. Empty means none saved.
+    /// </summary>
+    [MaxLength(4096)]
+    public string GamePlan { get; set; } = "";
+
+    /// <summary>
     /// Competition the player entered with CMD_JOIN_COMPLG, 0 for none. One at a time: the
     /// client knows ERR_COMPE_JOIN_OTHERCOMPE for a second entry.
     /// </summary>

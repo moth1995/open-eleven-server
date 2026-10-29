@@ -416,6 +416,38 @@ public sealed class AccountHandlers(
         return [ctx.Ok()];
     }
 
+    /// <summary>
+    /// The player's saved game plan (reply parsed by FUN_0052a680): <c>gameplan_data_size</c> bytes,
+    /// sent as the hex string <c>gameplan_data</c>. A size of 0 puts the client in its error
+    /// state, and so does ERR_DATANOTFOUND (seen in the client), so a player who has saved nothing
+    /// gets the default plan.
+    /// </summary>
+    [Command("CMD_GET_GAMEPLAN", Roles = ServiceRole.Menu, Profiles = GameProfiles.Modern)]
+    public async ValueTask<KvMessage[]> GetGamePlan(CommandContext ctx)
+    {
+        var player = await players.GetAsync(ctx.Request.GetInt32("pid", ctx.Session.Pid), ctx.CancellationToken);
+        if (player is null)
+            return [ctx.Fail("ERR_DATANOTFOUND")];
+
+        var plan = player.GamePlan.Length > 0 ? player.GamePlan : DefaultGamePlan.Hex;
+        return [ctx.Ok().Set("gameplan_data_size", plan.Length / 2).Set("gameplan_data", plan)];
+    }
+
+    /// <summary>Saves the game plan block as the client sent it (a hex string of gameplan_data_size bytes).</summary>
+    [Command("CMD_SET_GAMEPLAN", Roles = ServiceRole.Menu, Profiles = GameProfiles.Modern)]
+    public async ValueTask<KvMessage[]> SetGamePlan(CommandContext ctx)
+    {
+        var size = ctx.Request.GetInt32("gameplan_data_size", 0);
+        var data = ctx.Request.GetString("gameplan_data") ?? "";
+        if (size <= 0 || data.Length != size * 2 || data.Length > 4096 || !data.All(Uri.IsHexDigit)
+            || await players.GetAsync(ctx.Session.Pid, ctx.CancellationToken) is not { } player)
+            return [ctx.Fail("ERR_DATABASE")];
+
+        player.GamePlan = data;
+        await players.SaveAsync(ctx.CancellationToken);
+        return [ctx.Ok()];
+    }
+
     /// <summary>Reads a YES/NO flag, returning null when the field is absent.</summary>
     private static bool? ReadFlag(KvMessage message, string key)
         => message.GetString(key) switch
