@@ -3,6 +3,7 @@
 //
 // This file is part of OpenEleven. See the LICENSE file at the repository root.
 
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenEleven.Data.Repositories;
 using OpenEleven.Protocol.Kv;
@@ -21,16 +22,62 @@ public sealed class GateHandlers(
     IOptionsMonitor<ServerOptions> options,
     ServerCatalog catalog,
     WebAssets assets,
-    ICatalogRepository repository)
+    ICatalogRepository repository,
+    ILogger<GateHandlers> log)
 {
     private const ServiceRole AnyServiceRole = ServiceRole.All;
 
-    // PES 2011 answers CMD_GET_SVRLIST with a different payload shape and has its own
-    // handler (Pes2011Handlers), so this one stays declared for the titles whose client
-    // parses svrlist/svrgid.
-    [Command("CMD_GET_SVRLIST", Roles = ServiceRole.Gate, Profiles = GameProfile.All & ~GameProfile.Pes2011Pc, RequiredState = SessionState.Connected)]
+    // PES 2011 and later answer CMD_GET_SVRLIST and CMD_DISCONNECT with a different payload
+    // shape and have their own handlers (below); these are PES 2010's svrlist/svrgid.
+    // The reference server echoed the whole server list back on disconnect; the client
+    // tolerates it and it lets a reconnect skip a round trip.
+    [Command("CMD_GET_SVRLIST", Roles = ServiceRole.Gate, Profiles = GameProfile.Pes2010Pc, RequiredState = SessionState.Connected)]
+    [Command("CMD_DISCONNECT", Roles = AnyServiceRole, Profiles = GameProfile.Pes2010Pc, RequiredState = SessionState.Connected)]
+    public ValueTask<KvMessage[]> GetServerListPes2010(CommandContext ctx)
+        => Reply.Of(ctx.Ok().SetList("server_num", "svrlist", catalog.BuildPes2010Entries()));
+
+    /// <summary>
+    /// The server list the client uses to find ACCOUNT/MENU. The response parser
+    /// (<c>FUN_00ffd160</c>) addresses entries as <c>server_list[i].svrtype|svraddr|svrport|userCount</c>
+    /// (format literal <c>server_list[%d].%s</c> at 0x013ba1a4) and raises
+    /// <c>ERR_CLIENT_OPTFORMAT</c> for any entry missing one of those four fields, so the
+    /// payload carries exactly those and nothing else.
+    /// </summary>
+    [Command("CMD_GET_SVRLIST", Roles = ServiceRole.Gate, Profiles = GameProfiles.Modern, RequiredState = SessionState.Connected)]
     public ValueTask<KvMessage[]> GetServerList(CommandContext ctx)
-        => Reply.Of(ctx.Ok().SetList("server_num", catalog.ServerListKey, catalog.BuildServerEntries()));
+    {
+        var entries = catalog.BuildPes2011Entries();
+        if (entries.Count == 0)
+        {
+            // The client's own canned failure shape: 0x013ba3a0 holds
+            // result="%s",server_num=0,server_list=[] and SvrTypeErr is the only gate-layer
+            // error literal in the binary.
+            log.LogError(
+                "PES 2011 CMD_GET_SVRLIST has nothing to advertise: no enabled endpoint maps to " +
+                "an svrtype the client's parser recognises");
+
+            return Reply.Of(new KvMessage()
+                .Set("result", "SvrTypeErr")
+                .Set("msg", ctx.Msg)
+                .Set("rqid", ctx.Rqid)
+                .SetList("server_num", "server_list", Array.Empty<KvMessage>()));
+        }
+
+        // The gate state machine (pes2011.exe FUN_0061e620, state 0x11) re-parses this same
+        // reply with FUN_005104f0, which reads the PES 2010 shape (svrlist + svrport/max_player_num/
+        // player_num/svrgid). A reply without it leaves the gate's +0x68 flag at 0, and state
+        // 0x12 then ends the session through the error path ("An error has occurred"). So carry
+        // both lists; each parser ignores the other's key.
+        var legacy = catalog.BuildLegacyEntries();
+        return Reply.Of(ctx.Ok()
+            .SetList("server_num", "server_list", entries)
+            .Set("svrlist", legacy));
+    }
+
+    /// <summary>The server list again, as the reference server echoed it on disconnect.</summary>
+    [Command("CMD_DISCONNECT", Roles = ServiceRole.All, Profiles = GameProfiles.Modern, RequiredState = SessionState.Connected)]
+    public ValueTask<KvMessage[]> Disconnect(CommandContext ctx)
+        => Reply.Of(ctx.Ok().SetList("server_num", "server_list", catalog.BuildPes2011Entries()));
 
     [Command("CMD_GET_SVRVERSION", Roles = AnyServiceRole, RequiredState = SessionState.Connected)]
     public ValueTask<KvMessage[]> GetVersion(CommandContext ctx)
@@ -80,7 +127,7 @@ public sealed class GateHandlers(
             UrlEntry("EULA_PES", $"{host}/eula_pes.txt", assets.SizeOf("/eula_pes.txt")),
         };
 
-        if (options.CurrentValue.GameProfile == GameProfile.Pes2011Pc)
+        if (options.CurrentValue.GameProfile.IsModern())
         {
             // The terms text is served by /eula_pes.txt (GET_HTTP), and the ranking screen
             // posts to RANK, or RANK_WEEK for an archived week. FUN_005f0a40 dereferences the
@@ -106,24 +153,22 @@ public sealed class GateHandlers(
             }
 
         }
-        else if (options.CurrentValue.GameProfile == GameProfile.Pes2010Pc)
+        else
         {
             entries.Add(UrlEntry("RANK_WEEK", $"{host}/ranking", 0));
         }
 
-        if (options.CurrentValue.GameProfile is GameProfile.Pes2010Pc or GameProfile.Pes2011Pc)
-        {
-            // pes2011.exe FUN_00513de0 and pes2010.exe FUN_0072c6e0 never record the type,
-            // version or size of ulist[0] (their guard is `index - 1 < 0x17`), only the url, so
-            // slot 0 always reads as type 0 = RANK. Anything else put there becomes the ranking
-            // url (PES 2010 posted its ranking query to /pcspec.bin; in PES 2011 a PC_SPEC there
-            // made FUN_005a5d30 strlen(NULL) at 0x005A5D70), so slot 0 carries the RANK url.
-            var rank = entries.FindIndex(e => e.GetString("type") == "RANK");
-            var first = rank >= 0 ? entries[rank] : UrlEntry("RANK", $"{host}/ranking", 0);
-            if (rank >= 0)
-                entries.RemoveAt(rank);
-            entries.Insert(0, first);
-        }
+        // pes2011.exe FUN_00513de0 and pes2010.exe FUN_0072c6e0 never record the type,
+        // version or size of ulist[0] (their guard is `index - 1 < 0x17`), only the url, so
+        // slot 0 always reads as type 0 = RANK. Anything else put there becomes the ranking
+        // url (PES 2010 posted its ranking query to /pcspec.bin; in PES 2011 a PC_SPEC there
+        // made FUN_005a5d30 strlen(NULL) at 0x005A5D70), so slot 0 carries the RANK url.
+        // ponytail: the slot-0 rule is verified only for PES 2010/2011; a RANK entry there is also a valid RANK entry if 2012 reads types.
+        var rank = entries.FindIndex(e => e.GetString("type") == "RANK");
+        var first = rank >= 0 ? entries[rank] : UrlEntry("RANK", $"{host}/ranking", 0);
+        if (rank >= 0)
+            entries.RemoveAt(rank);
+        entries.Insert(0, first);
 
         return Reply.Of(ctx.Ok().SetList("url_num", "ulist", entries));
     }
@@ -161,14 +206,6 @@ public sealed class GateHandlers(
                 ? (important ? "TRUE" : "FALSE")
                 : (important ? "1" : "0"))
             .Set("present", present ? "1" : "0");
-
-    [Command("CMD_DISCONNECT", Roles = AnyServiceRole, RequiredState = SessionState.Connected)]
-    public ValueTask<KvMessage[]> Disconnect(CommandContext ctx)
-    {
-        // The reference server echoed the whole server list back on disconnect; the
-        // client tolerates it and it lets a reconnect skip a round trip.
-        return Reply.Of(ctx.Ok().SetList("server_num", catalog.ServerListKey, catalog.BuildServerEntries()));
-    }
 
     internal static KvMessage UrlEntry(string type, string url, int size, int version = 1, string md5 = "0")
         => new KvMessage()

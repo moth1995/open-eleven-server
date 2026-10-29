@@ -23,8 +23,32 @@ public sealed class RoomHandlers(
 {
     private const ServiceRole RoomRoles = ServiceRole.Menu | ServiceRole.Lobby | ServiceRole.FdLobby;
 
-    [Command("CMD_CREATEJOIN_ROOM", Roles = RoomRoles, RequiredState = SessionState.InBlock)]
+    /// <summary>The whole block, the creator included, gets the new room through its room-list watch.</summary>
+    [Command("CMD_CREATEJOIN_ROOM", Roles = RoomRoles, Profiles = GameProfiles.Modern, RequiredState = SessionState.InBlock)]
     public ValueTask<KvMessage[]> CreateOrJoinRoom(CommandContext ctx)
+        => CreateOrJoin(ctx, room =>
+        {
+            ctx.Hub.PublishRoomAdded(room);
+            PublishBlockRoom(ctx);
+            return [ctx.Ok().Set("room_id", room.Id)];
+        });
+
+    /// <summary>
+    /// PES 2010 shows the room screen from its room-list cache (FUN_00759e50 by room_id). The
+    /// creator's cache has no entry for a room it just made, so it gets one after the reply;
+    /// without it the room name is blank and "Start Match" stays disabled. (The owner's copy that
+    /// the room menu needs comes with CMD_SET_GAMEENV; see there.)
+    /// </summary>
+    [Command("CMD_CREATEJOIN_ROOM", Roles = RoomRoles, Profiles = GameProfile.Pes2010Pc, RequiredState = SessionState.InBlock)]
+    public ValueTask<KvMessage[]> CreateOrJoinRoomPes2010(CommandContext ctx)
+        => CreateOrJoin(ctx, room =>
+        {
+            ctx.Hub.PublishRoomAdded(room, ctx.Session.Id);
+            PublishBlockRoom(ctx);
+            return [ctx.Ok().Set("room_id", room.Id), ctx.Hub.RoomListUpdate(room)];
+        });
+
+    private ValueTask<KvMessage[]> CreateOrJoin(CommandContext ctx, Func<Room, KvMessage[]> created)
     {
         // Keep accepting the older combined form used during early protocol tracing.
         // The room browser sends CMD_JOIN_ROOM for an advertised existing room.
@@ -59,20 +83,21 @@ public sealed class RoomHandlers(
             room.TeamFlag = new KvArray(chosen);
         room.DlcVersion = ctx.Session.DlcVersion;
 
-        ctx.Hub.PublishRoomUpdated(room, ctx.Session.Id);
-
-        var created = ctx.Ok().Set("room_id", room.Id);
-        if (!Is2010)
-            return Reply.Of(created);
-
-        // PES 2010 shows the room screen from its room-list cache (FUN_00759e50 by room_id).
-        // The creator's cache has no entry for a room it just made, so without this its room
-        // name is blank and "Start Match" stays disabled. (The owner's copy that the room menu
-        // needs comes with CMD_SET_GAMEENV; see there.)
-        return Reply.Of(created, ctx.Hub.RoomListUpdate(room));
+        return ValueTask.FromResult(created(room));
     }
 
-    private bool Is2010 => options.CurrentValue.GameProfile == GameProfile.Pes2010Pc;
+    /// <summary>
+    /// The block roster entry also carries the player's room_id. The room list panel resolves
+    /// a gamer through that roster entry, so it must learn the new room before the room row is useful.
+    /// </summary>
+    private void PublishBlockRoom(CommandContext ctx, int? roomId = null)
+    {
+        if (db.Players.Find(ctx.Session.Pid) is not { } player)
+            return;
+
+        var entry = PlayerPresenter.BlockListEntry(player, roomId ?? ctx.Session.RoomId ?? 0, ctx.Profile);
+        ctx.Hub.PublishBlockPlayerAdded(ctx.Session, entry);
+    }
 
     [Command("CMD_JOIN_ROOM", Roles = RoomRoles, RequiredState = SessionState.InBlock)]
     public ValueTask<KvMessage[]> JoinRoom(CommandContext ctx)
@@ -107,7 +132,7 @@ public sealed class RoomHandlers(
 
         // Prefer the caller's own room, so a member is resolved the same way as before
         // when the caller is already inside one; otherwise fall back to the block.
-        var room = ctx.Session.RoomId is { } roomId ? ctx.Hub.FindRoom(roomId) : null;
+        var room = ctx.CurrentRoom;
         var member =
             room?.Snapshot().FirstOrDefault(candidate => candidate.Pid == requestedPid)
             ?? ctx.Hub.SessionsInBlock(blockId)
@@ -163,8 +188,21 @@ public sealed class RoomHandlers(
     /// with a bare NOERR, but the settings have to reach whoever joins the room, so they
     /// are held on the room rather than discarded.
     /// </summary>
-    [Command("CMD_SET_GAMEENV", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
+    [Command("CMD_SET_GAMEENV", Roles = RoomRoles, Profiles = GameProfiles.Modern, RequiredState = SessionState.InRoom)]
     public ValueTask<KvMessage[]> SetGameEnvironment(CommandContext ctx)
+        => ApplyGameEnvironment(ctx, ownerGetsRoom: false);
+
+    /// <summary>
+    /// PES 2010 sends this right after creating the room, and its room-list cache comes out
+    /// empty from entering the room (rebuilt by FUN_00733eb0). The room menu is built after this
+    /// reply and checks ownership in that cache only then (FUN_008E6540 -> FUN_00728e20), so the
+    /// owner gets the room entry too or "Match Room Manager" stays disabled.
+    /// </summary>
+    [Command("CMD_SET_GAMEENV", Roles = RoomRoles, Profiles = GameProfile.Pes2010Pc, RequiredState = SessionState.InRoom)]
+    public ValueTask<KvMessage[]> SetGameEnvironmentPes2010(CommandContext ctx)
+        => ApplyGameEnvironment(ctx, ownerGetsRoom: true);
+
+    private ValueTask<KvMessage[]> ApplyGameEnvironment(CommandContext ctx, bool ownerGetsRoom)
     {
         var environment = ctx.Request.GetValue("game_env") as KvMessage;
         if (environment is null)
@@ -173,18 +211,14 @@ public sealed class RoomHandlers(
             return Reply.Of(ctx.Ok());
         }
 
-        var room = ctx.Session.RoomId is { } id ? ctx.Hub.FindRoom(id) : null;
+        var room = ctx.CurrentRoom;
         if (room is null)
             return Reply.Of(ctx.Err("NOROOM"));
 
         room.GameEnvironment = environment;
         // The other occupants only ever learn the settings through this watch.
         ctx.Hub.PublishDecideGameEnv(room);
-        // PES 2010 sends this right after creating the room, and its room-list cache comes out
-        // empty from entering the room (rebuilt by FUN_00733eb0). The room menu is built after
-        // this reply and checks ownership in that cache only then (FUN_008E6540 ->
-        // FUN_00728e20), so the owner gets the entry here or "Match Room Manager" stays disabled.
-        ctx.Hub.PublishRoomUpdated(room, Is2010 ? null : ctx.Session.Id);
+        ctx.Hub.PublishRoomUpdated(room, ownerGetsRoom ? null : ctx.Session.Id);
 
         log.LogInformation(
             "Room {RoomId} settings: gametime={Time} cpu={Cpu} ball={Ball} subs={Subs}",
@@ -283,7 +317,7 @@ public sealed class RoomHandlers(
     [Command("CMD_SET_GUEST", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
     public ValueTask<KvMessage[]> SetGuest(CommandContext ctx)
     {
-        var room = ctx.Session.RoomId is { } id ? ctx.Hub.FindRoom(id) : null;
+        var room = ctx.CurrentRoom;
         if (room is null)
             return Reply.Of(ctx.Fail("ERR_ROOMNOTFOUND"));
 
@@ -295,7 +329,7 @@ public sealed class RoomHandlers(
     [Command("CMD_CHANGE_ROOMNAME", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
     public ValueTask<KvMessage[]> ChangeRoomName(CommandContext ctx)
     {
-        var room = ctx.Session.RoomId is { } id ? ctx.Hub.FindRoom(id) : null;
+        var room = ctx.CurrentRoom;
         if (room is null)
             return Reply.Of(ctx.Fail("ERR_ROOMNOTFOUND"));
         if (ctx.Session.Pid != room.OwnerPid)
@@ -313,7 +347,7 @@ public sealed class RoomHandlers(
     [Command("CMD_KICK_ROOMMEMBER", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
     public ValueTask<KvMessage[]> KickRoomMember(CommandContext ctx)
     {
-        var room = ctx.Session.RoomId is { } id ? ctx.Hub.FindRoom(id) : null;
+        var room = ctx.CurrentRoom;
         if (room is null)
             return Reply.Of(ctx.Fail("ERR_ROOMNOTFOUND"));
         if (ctx.Session.Pid != room.OwnerPid)
@@ -355,7 +389,7 @@ public sealed class RoomHandlers(
     [Command("CMD_UPDATE_ROOMSTATE", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
     public ValueTask<KvMessage[]> UpdateRoomState(CommandContext ctx)
     {
-        var room = ctx.Session.RoomId is { } roomId ? ctx.Hub.FindRoom(roomId) : null;
+        var room = ctx.CurrentRoom;
         if (room is null)
             return Reply.Of(ctx.Fail("ERR_ROOMNOTFOUND"));
 
@@ -388,7 +422,7 @@ public sealed class RoomHandlers(
     [Command("CMD_ENTRY_GAME", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
     public ValueTask<KvMessage[]> EntryGame(CommandContext ctx)
     {
-        var room = ctx.Session.RoomId is { } id ? ctx.Hub.FindRoom(id) : null;
+        var room = ctx.CurrentRoom;
         if (room is null)
             return Reply.Of(ctx.Fail("ERR_ROOMNOTFOUND"));
 
@@ -446,7 +480,7 @@ public sealed class RoomHandlers(
     [Command("MSG_REQRMEMBERLIST", Roles = RoomRoles, RequiredState = SessionState.InRoom)]
     public ValueTask<KvMessage[]> RequestRoomMemberList(CommandContext ctx)
     {
-        var room = ctx.Session.RoomId is { } id ? ctx.Hub.FindRoom(id) : null;
+        var room = ctx.CurrentRoom;
         if (room is null)
             return Reply.Of(ctx.Err("NOROOM"));
 
@@ -501,6 +535,7 @@ public sealed class RoomHandlers(
             return [RoomJoinError(ctx, joined.Status)];
 
         ctx.Hub.PublishRoomJoined(joined, ctx.Session);
+        PublishBlockRoom(ctx, joined.Room.Id);
         log.LogInformation("pid {Pid} joined room {RoomId}", ctx.Session.Pid, joined.Room.Id);
         var response = ctx.Ok();
         if (includeRoomId)
@@ -532,10 +567,7 @@ public sealed class RoomHandlers(
         // Queue the roster after the CMD_JOIN_ROOM response, never before it: the join
         // state machine is waiting on that response, and the roster stream is also what
         // populates the room screen for a player who joined an existing room.
-        replies.AddRange(RoomPresenter.MemberListStream(joined.Room, Hub.UnsolicitedRqid));
-        // PES 2010 looks the host up in this list before connecting to it (FUN_007b8ad0).
-        if (options.CurrentValue.GameProfile != GameProfile.Pes2011Pc)
-            replies.Add(RoomPresenter.RoomPlayerWatch(joined.Room, Hub.UnsolicitedRqid));
+        replies.AddRange(ctx.Hub.RosterStream(joined.Room, Hub.UnsolicitedRqid));
 
         // PublishRoomJoined skips the joiner; it gets its own copy here, after the join response.
         if (ctx.Hub.RoomListUpdateFor(ctx.Session, joined.Room) is { } update)

@@ -127,7 +127,7 @@ public class Pes2011SocialTests
             .Set("team_flag", new KvArray(["YES", "NO", "YES", ""]))
             .Set("is_legends_vs_player", "YES")), m => m.MsgName == "CMD_CREATEJOIN_ROOM");
 
-        var entry = Pes2011Lists.RoomEntry(harness.Hub.FindRoom(created.GetInt32("room_id"))!);
+        var entry = ListWatchEntries.RoomEntry(harness.Hub.FindRoom(created.GetInt32("room_id"))!, Configuration.GameProfile.Pes2011Pc);
 
         Assert.Equal(["YES", "NO", "YES"], Assert.IsType<KvArray>(entry.GetValue("team_flag")).Values);
         Assert.Equal("YES", entry.GetString("is_legends_vs_player"));
@@ -177,6 +177,34 @@ public class Pes2011SocialTests
         await harness.DispatchAsync(owner, "CMD_ADD_FOUL", withFields: r => r.Set("injury_side", "<b>junk</b>"));
 
         Assert.Equal("CARD|1ST||RED|0|0", room.Sheet.Events);
+    }
+
+    [Fact]
+    public async Task A_plain_foul_is_not_recorded_as_an_injury()
+    {
+        await using var harness = await Harness();
+        var owner = Player(harness, 1, SessionState.InBlock);
+        var created = Assert.Single(await harness.DispatchAsync(owner, "CMD_CREATEJOIN_ROOM", withFields: r => r
+            .Set("name", "r").Set("max_players", 2)), m => m.MsgName == "CMD_CREATEJOIN_ROOM");
+        var room = harness.Hub.FindRoom(created.GetInt32("room_id"))!;
+        await harness.DispatchAsync(owner, "CMD_SET_GAMEMEMBERENV");
+        await harness.DispatchAsync(owner, "CMD_CHANGE_GAMEPHASE", withFields: r => r.Set("phase", "1ST"));
+
+        // Every foul carries the fouled side and player plus an all-zero injury_data record.
+        await harness.DispatchAsync(owner, "CMD_ADD_FOUL", withFields: r => r
+            .Set("card_kind", "NONE").Set("card_side", "AWAY")
+            .Set("injury_side", "HOME").Set("injury_gameplayer_id", 4711)
+            .Set("injury_all", 0).Set("injury_one", 5)
+            .Set("injury_data", new KvMessage()
+                .Set("part", 0).Set("symptom", 0).Set("level", 0).Set("level_no_self_conscious", 0)));
+        Assert.Equal("", room.Sheet.Events);
+
+        // A real injury is the nested record describing one.
+        await harness.DispatchAsync(owner, "CMD_ADD_FOUL", withFields: r => r
+            .Set("injury_side", "AWAY").Set("injury_gameplayer_id", 1234)
+            .Set("injury_data", new KvMessage()
+                .Set("part", 2).Set("symptom", 3).Set("level", 2).Set("level_no_self_conscious", 1)));
+        Assert.Equal("INJURY|1ST|AWAY|1234", room.Sheet.Events);
     }
 
     [Fact]

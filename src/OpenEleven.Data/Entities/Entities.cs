@@ -207,6 +207,12 @@ public sealed class MatchRecord
     /// <summary>Goals and cards as reported by the match host, one per line (see MatchEvents).</summary>
     public string Events { get; set; } = "";
 
+    /// <summary>
+    /// Minutes per footballer from each player's CMD_SET_GAMEPLAYER_PLAYTIME,
+    /// "pid|gameplayer_id|position|minutes" per line.
+    /// </summary>
+    public string PlayTimes { get; set; } = "";
+
     public DateTime PlayedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>The community the match was played for (a COMMU room); 0 for every other match.</summary>
