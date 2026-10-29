@@ -203,8 +203,9 @@ public sealed class QuickMatchHandlers(IPlayerRepository players, ILogger<QuickM
 
     /// <summary>
     /// MSG_QUICK_MATCH_MEMBER_NOTICE, one per recipient because the endpoints are per pair
-    /// (Hub.EndpointsFor). FUN_00fffdf0 rejects the notice as ERR_CLIENT_SVRFORMAT when any member
-    /// key other than matching_order is missing; YES/NO fields are compared to "YES".
+    /// (Hub.EndpointsFor). pes2012.exe FUN_01105B90 rejects the notice as ERR_CLIENT_SVRFORMAT when
+    /// any member key is missing; pes2011.exe FUN_00fffdf0 the same for any but matching_order, and
+    /// it reads none of the 2012-only keys. YES/NO fields are compared to "YES".
     /// </summary>
     private async Task SendMemberNoticeAsync(CommandContext ctx, QuickGroup group)
     {
@@ -243,7 +244,15 @@ public sealed class QuickMatchHandlers(IPlayerRepository players, ILogger<QuickM
                     .Set("division", RankSystem.Label(p?.Division ?? default, ctx.Profile))
                     .Set("rating", p?.Rating ?? 0)
                     .Set("ml_division", "ML_DIVISION_5")
-                    .Set("ml_point", 0);
+                    .Set("ml_point", 0)
+                    // FUN_01105B90 requires every one of these keys; a single missing key is
+                    // reported as ERR_CLIENT_SVRFORMAT and the client cancels the match.
+                    .Set("ml_team_name", "")
+                    .Set("ml_base_team_id", 0)
+                    .Set("ml_team_type", "")
+                    .Set("is_chat", "NO")
+                    .Set("is_nice", "NO")
+                    .Set("is_restricted", "NO");
             }).ToArray();
 
             viewer.Session.Push(KvMessage.Ok("MSG_QUICK_MATCH_MEMBER_NOTICE", viewer.Rqid)

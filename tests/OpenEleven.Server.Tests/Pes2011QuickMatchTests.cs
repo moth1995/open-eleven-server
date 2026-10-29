@@ -74,6 +74,28 @@ public class Pes2011QuickMatchTests
     }
 
     [Fact]
+    public async Task Member_notice_carries_every_key_the_2012_parser_requires()
+    {
+        await using var harness = await ServerHarness.CreateAsync(s => s["Server:GameProfile"] = "Pes2012Pc");
+        var (a, b) = (Player(harness, 1), Player(harness, 2));
+
+        await Search(harness, a);
+        await Search(harness, b);
+        var notice = Assert.Single(Drain(a), m => m.MsgName == "MSG_QUICK_MATCH_MEMBER_NOTICE");
+        var member = notice.GetList("member")[0];
+
+        // FUN_01105B90 fails the whole notice with ERR_CLIENT_SVRFORMAT if any of these is absent.
+        foreach (var key in new[]
+                 {
+                     "matching_order", "is_owner", "pid", "pname", "has_guestplayer", "is_begin",
+                     "ex_ip", "ex_port", "in_ip", "in_port", "from_country", "from_area",
+                     "division", "rating", "ml_division", "ml_point", "ml_team_name",
+                     "ml_base_team_id", "ml_team_type", "is_chat", "is_nice", "is_restricted",
+                 })
+            Assert.True(member.Has(key), $"member is missing {key}");
+    }
+
+    [Fact]
     public async Task Quick_chat_reaches_the_match_room_and_team_chat_only_the_own_side()
     {
         await using var harness = await ServerHarness.CreateAsync(s => s["Server:GameProfile"] = "Pes2011Pc");
