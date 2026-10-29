@@ -99,6 +99,18 @@ public class GameProfileTests
             Assert.Equal(served, registry.TryGet(msg, out _));
     }
 
+    // An empty list makes both clients forfeit at Start Match; the client keeps at most 400 ids.
+    [Theory]
+    [InlineData(GameProfile.Pes2010Pc)]
+    [InlineData(GameProfile.Pes2011Pc)]
+    public void Usable_team_lists_fit_the_client_whitelist(GameProfile profile)
+    {
+        var teams = TitleProfiles.UseableTeams(profile);
+
+        Assert.InRange(teams.Length, 1, 400);
+        Assert.Equal(teams.Length, teams.Distinct().Count());
+    }
+
     [Fact]
     public void Overlapping_variants_on_the_active_title_still_throw()
         => Assert.Throws<InvalidOperationException>(() => Build(GameProfile.Pes2012Pc));
