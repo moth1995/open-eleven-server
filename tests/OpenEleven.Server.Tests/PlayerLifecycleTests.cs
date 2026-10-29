@@ -67,18 +67,18 @@ public sealed class PlayerLifecycleTests
 
         await using var scope = harness.Services.CreateAsyncScope();
         var player = scope.ServiceProvider.GetRequiredService<GameDbContext>().Players.Single(p => p.Name == "Ranked");
-        Assert.Equal(("D5", 1200), (player.Division, player.Rating));
+        Assert.Equal((Division.D5, 1200), (player.Division, player.Rating));
     }
 
     [Fact]
     public void Unplayed_profiles_are_moved_to_the_start_rating_and_played_ones_are_kept()
     {
         var rank = new RankOptions { StartRating = 1000 };
-        var unplayed = new Player { Rating = 500, Division = "D5", Stats = new PlayerStats() };
-        var played = new Player { Rating = 742, Division = "D5", Stats = new PlayerStats { MatchCount = 3 } };
+        var unplayed = new Player { Rating = 500, Stats = new PlayerStats() };
+        var played = new Player { Rating = 742, Stats = new PlayerStats { MatchCount = 3 } };
 
-        RankSystem.Normalize(unplayed, rank, GameProfile.Pes2011Pc);
-        RankSystem.Normalize(played, rank, GameProfile.Pes2011Pc);
+        RankSystem.Normalize(unplayed, rank);
+        RankSystem.Normalize(played, rank);
 
         Assert.Equal((1000, 742), (unplayed.Rating, played.Rating));
     }

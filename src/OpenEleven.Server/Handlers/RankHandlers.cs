@@ -96,7 +96,7 @@ public sealed class RankHandlers(GameDbContext db, TimeProvider time, ILogger<Ra
 
         var counts = await db.Players.GroupBy(p => p.Division).Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(g => g.Key, g => g.Count, ctx.CancellationToken);
-        var divcount = RankSystem.Divisions.Select(d => (object?)counts.GetValueOrDefault(d)).Append(0).ToArray();
+        var divcount = Enum.GetValues<Division>().Select(d => (object?)counts.GetValueOrDefault(d)).Append(0).ToArray();
 
         player.PendingDivisionUpdate = "";
         await db.SaveChangesAsync(ctx.CancellationToken);

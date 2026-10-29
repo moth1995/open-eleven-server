@@ -68,8 +68,8 @@ public sealed class Player
     [MaxLength(64)]
     public string NormalizedName { get; set; } = "";
 
-    [MaxLength(8)]
-    public string Division { get; set; } = "D3C";
+    /// <summary>Stored in the DivisionIndex column.</summary>
+    public Division Division { get; set; }
 
     [MaxLength(16)]
     public string Kind { get; set; } = "NORMAL";
@@ -300,8 +300,7 @@ public sealed class WeeklyRankingEntry
     public int Streak { get; set; }
     public int Rating { get; set; }
 
-    [MaxLength(8)]
-    public string Division { get; set; } = "";
+    public Division Division { get; set; }
 }
 
 /// <summary>Small server bookkeeping values (last processed week and season).</summary>

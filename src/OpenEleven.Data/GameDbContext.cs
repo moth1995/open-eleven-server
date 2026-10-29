@@ -44,6 +44,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             e.HasIndex(x => x.Name).IsUnique();
             e.HasIndex(x => x.NormalizedName).IsUnique();
             e.HasIndex(x => x.AccountId).IsUnique();
+            // DivisionIndex, not Division: databases before this held the name in a text column of that name.
+            e.Property(x => x.Division).HasColumnName("DivisionIndex");
             e.HasOne(x => x.Stats)
                 .WithOne()
                 .HasForeignKey<PlayerStats>(x => x.PlayerId)
@@ -91,6 +93,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.WeekStart, x.Rank });
+            e.Property(x => x.Division).HasColumnName("DivisionIndex");
         });
 
         b.Entity<ServerSetting>(e => e.HasKey(x => x.Key));

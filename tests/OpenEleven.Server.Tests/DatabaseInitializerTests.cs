@@ -75,6 +75,67 @@ public sealed class DatabaseInitializerTests
         }
     }
 
+    // Divisions used to be stored as names; both ladders (D5..D1 and D3C..D1) are the same five
+    // steps, so a name becomes its position, in the player table and in the archived weeks.
+    [Theory]
+    [InlineData("D5", Division.D5)]
+    [InlineData("D3C", Division.D5)]
+    [InlineData("D4", Division.D4)]
+    [InlineData("D3B", Division.D4)]
+    [InlineData("D3", Division.D3)]
+    [InlineData("D3A", Division.D3)]
+    [InlineData("D2", Division.D2)]
+    [InlineData("D1", Division.D1)]
+    [InlineData("", Division.D5)]
+    public async Task Upgrades_division_names_to_positions_and_drops_the_text_columns(string stored, Division expected)
+    {
+        var databaseFile = Path.Combine(Path.GetTempPath(), $"OpenEleven-division-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var connectionString = $"Data Source={databaseFile};Pooling=False";
+            await CreateLegacyDatabaseAsync(connectionString);
+            await using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText =
+                    $"""
+                    UPDATE "Players" SET "Division" = '{stored}';
+                    CREATE TABLE "WeeklyRankings" (
+                        "Id" INTEGER NOT NULL CONSTRAINT "PK_WeeklyRankings" PRIMARY KEY AUTOINCREMENT,
+                        "WeekStart" INTEGER NOT NULL, "Pid" INTEGER NOT NULL, "Name" TEXT NOT NULL,
+                        "Rank" INTEGER NOT NULL, "Points" INTEGER NOT NULL, "Matches" INTEGER NOT NULL,
+                        "Wins" INTEGER NOT NULL, "Draws" INTEGER NOT NULL, "Losses" INTEGER NOT NULL,
+                        "Streak" INTEGER NOT NULL, "Rating" INTEGER NOT NULL, "Division" TEXT NOT NULL);
+                    INSERT INTO "WeeklyRankings" VALUES (1, 100, 1, 'Legacy Profile', 1, 0, 0, 0, 0, 0, 0, 500, '{stored}');
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var options = new DbContextOptionsBuilder<GameDbContext>().UseSqlite(connectionString).Options;
+            await using var db = new GameDbContext(options);
+            await new DatabaseInitializer(db, NullLogger<DatabaseInitializer>.Instance).InitializeAsync();
+
+            Assert.Equal(expected, (await db.Players.SingleAsync()).Division);
+            Assert.Equal(expected, (await db.WeeklyRankings.SingleAsync()).Division);
+
+            // The old NOT NULL text column would fail this insert.
+            var second = new Account { GameId = "second", PasswordHash = "" };
+            second.Players.Add(new Player { Name = "Second", NormalizedName = "SECOND", Stats = new PlayerStats() });
+            db.Accounts.Add(second);
+            await db.SaveChangesAsync();
+
+            // A second start finds nothing left to move.
+            await new DatabaseInitializer(db, NullLogger<DatabaseInitializer>.Instance).InitializeAsync();
+            Assert.Equal(expected, (await db.Players.OrderBy(p => p.Pid).FirstAsync()).Division);
+        }
+        finally
+        {
+            File.Delete(databaseFile);
+        }
+    }
+
     [Fact]
     public async Task Removes_only_the_untouched_legacy_demo_account_and_profile()
     {
@@ -237,7 +298,7 @@ public sealed class DatabaseInitializerTests
                 {
                     Name = "Local Player",
                     NormalizedName = "LOCAL PLAYER",
-                    Division = "D3C",
+                    Division = Division.D5,
                     Kind = "NORMAL",
                     Lang = "EN",
                     Intro = "PLAYERINFO FIELD TEST",

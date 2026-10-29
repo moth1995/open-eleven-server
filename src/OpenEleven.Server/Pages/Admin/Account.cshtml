@@ -1,5 +1,6 @@
 @page "/admin/accounts/{id:int}"
 @model OpenEleven.Server.Pages.Admin.AccountModel
+@inject OpenEleven.Server.Configuration.GameProfile Game
 @{
     var a = Model.Account;
     ViewData["Title"] = a.GameId;
@@ -37,7 +38,7 @@
             {
                 <tr>
                     <td><a href="/players/@p.Pid">@p.Name</a></td>
-                    <td><span class="div @p.Division">@p.Division</span></td>
+                    <td><span class="div @p.Division">@OpenEleven.Server.State.RankSystem.Label(p.Division, Game)</span></td>
                     <td class="num score">@p.Rating</td>
                     <td class="num">@p.Stats.MatchCount</td>
                     <td class="num">@p.Stats.WinCount–@p.Stats.DrawCount–@p.Stats.LoseCount</td>

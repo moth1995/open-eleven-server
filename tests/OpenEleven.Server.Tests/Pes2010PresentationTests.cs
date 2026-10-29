@@ -16,27 +16,25 @@ namespace OpenEleven.Server.Tests;
 
 public class Pes2010PresentationTests
 {
+    // One stored position, two sets of names: the ladders have the same five steps.
     [Theory]
-    [InlineData("D1", "D1")]
-    [InlineData("D2", "D2")]
-    [InlineData("D3", "D3A")]
-    [InlineData("D3A", "D3A")]
-    [InlineData("D3B", "D3B")]
-    [InlineData("D3C", "D3C")]
-    [InlineData("D4", "D3B")]
-    [InlineData("D5", "D3C")]
-    [InlineData("NONE", "D3C")]
-    public void Pes2010_uses_its_own_division_ladder(string stored, string expected)
+    [InlineData(Division.D5, "D3C", "D5")]
+    [InlineData(Division.D4, "D3B", "D4")]
+    [InlineData(Division.D3, "D3A", "D3")]
+    [InlineData(Division.D2, "D2", "D2")]
+    [InlineData(Division.D1, "D1", "D1")]
+    public void Each_title_names_the_stored_position_in_its_own_ladder(Division stored, string pes2010, string pes2011)
     {
-        Assert.Equal(expected, RankSystem.Label(stored, GameProfile.Pes2010Pc));
+        Assert.Equal(pes2010, RankSystem.Label(stored, GameProfile.Pes2010Pc));
+        Assert.Equal(pes2011, RankSystem.Label(stored, GameProfile.Pes2011Pc));
     }
 
     [Fact]
-    public void Normalizing_a_pes2010_player_keeps_its_division()
+    public void Normalizing_a_player_keeps_its_division()
     {
-        var player = new Player { Division = "D3C", Stats = new PlayerStats { MatchCount = 1 } };
-        RankSystem.Normalize(player, new RankOptions(), GameProfile.Pes2010Pc);
-        Assert.Equal("D3C", player.Division);
+        var player = new Player { Division = Division.D2, Stats = new PlayerStats { MatchCount = 1 } };
+        RankSystem.Normalize(player, new RankOptions());
+        Assert.Equal(Division.D2, player.Division);
     }
 
     [Fact]
@@ -65,13 +63,6 @@ public class Pes2010PresentationTests
                     && notice.Has("info") && notice.Has("important") && notice.Has("present"));
         Assert.Equal("TRUE", notice.GetString("present"));
         Assert.Equal("FALSE", notice.GetString("important"));
-    }
-
-    [Fact]
-    public void Pes2011_keeps_its_division_keys()
-    {
-        Assert.Equal("D2", RankSystem.Label("D2", GameProfile.Pes2011Pc));
-        Assert.Equal("D5", RankSystem.Label("D3C", GameProfile.Pes2011Pc));
     }
 
     [Fact]
@@ -120,7 +111,7 @@ public class Pes2010PresentationTests
     [Fact]
     public void Block_and_account_lists_use_the_pes2010_division_too()
     {
-        var player = new Player { Pid = 1, Name = "p", Division = "D5", Kind = "NORMAL", Lang = "EN" };
+        var player = new Player { Pid = 1, Name = "p", Division = Division.D5, Kind = "NORMAL", Lang = "EN" };
         Assert.Equal("D3C", PlayerPresenter.ListEntry(player, GameProfile.Pes2010Pc).GetString("division"));
         Assert.Equal("D3C", PlayerPresenter.BlockListEntry(player, 0, GameProfile.Pes2010Pc).GetString("division"));
         Assert.Equal("D5", PlayerPresenter.ListEntry(player, GameProfile.Pes2011Pc).GetString("division"));

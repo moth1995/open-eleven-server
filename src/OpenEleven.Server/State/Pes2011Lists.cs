@@ -114,7 +114,6 @@ public static class Pes2011Lists
     /// <summary>Makes a PES 2010 style block entry acceptable to the 2011 parser.</summary>
     public static KvMessage BlockPlayerEntry(KvMessage e)
     {
-        e.Set("division", RankSystem.DivisionName(e.GetString("division")));
         foreach (var (key, value) in new (string, object)[]
                  {
                      ("npid", ""), ("xuid", 0), ("manner", 3), ("selfreport_level", "PRO"),

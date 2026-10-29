@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.OutputCaching;
 using OpenEleven.Data;
+using DivisionStep = OpenEleven.Data.Entities.Division;
 using OpenEleven.Server.Configuration;
 using OpenEleven.Server.State;
 using OpenEleven.Server.Web;
@@ -41,9 +42,11 @@ public sealed class RankingsModel(GameDbContext db, Hub hub, GameProfile game) :
         if (tab.Key is null)
             tab = Shown.First();
         Sort = tab.Key;
-        Division = Ranked && RankSystem.Divisions.Contains(Division) ? Division : null;
+        DivisionStep? step = Ranked && Enum.TryParse<DivisionStep>(Division, out var parsed) && Enum.IsDefined(parsed)
+            ? parsed : null;
+        Division = step?.ToString();
 
-        var all = await new RankingQuery(db).OrderedAsync(Week ? tab.Type + 8 : tab.Type, Division, ct);
+        var all = await new RankingQuery(db, game).OrderedAsync(Week ? tab.Type + 8 : tab.Type, step, ct);
         var pages = Pager.Count(all.Count, SiteData.PageSize);
         PageNumber = Math.Clamp(PageNumber, 1, pages);
         First = (PageNumber - 1) * SiteData.PageSize;

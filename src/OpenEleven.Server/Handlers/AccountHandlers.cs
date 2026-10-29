@@ -190,20 +190,11 @@ public sealed class AccountHandlers(
             if (player is null)
                 return [ctx.Fail("ERR_DATABASE")];
 
-            // pes2011.exe maps div through D5|D4|D3|D2|D1|NONE (table 0x16) and stores -1 for
-            // the PES 2010 value "D3C", which the player-info screen then trips over.
-            var is2011 = options.CurrentValue.GameProfile == GameProfile.Pes2011Pc;
-            var division = options.CurrentValue.GameProfile == GameProfile.Pes2010Pc
-                ? RankSystem.Pes2010DivisionName(player.Division)
-                : RankSystem.Applies(options.CurrentValue.GameProfile)
-                   && player.Division is not ("D5" or "D4" or "D3" or "D2" or "D1" or "NONE")
-                    ? "D5"
-                    : null;
-
             var teams = await players.GetRecentTeamsAsync(player.Pid, 5, ctx.CancellationToken);
-            var reply = PlayerPresenter.FillPlayerInfo(ctx.Ok(), player, division,
-                listSyntax: options.CurrentValue.GameProfile is GameProfile.Pes2010Pc or GameProfile.Pes2011Pc, teams);
-            if (is2011)
+
+            var reply = PlayerPresenter.FillPlayerInfo(ctx.Ok(), player, ctx.Profile,
+                listSyntax: true, teams);
+            if (ctx.Profile.IsModern())
             {
                 // Profile page 2 "Weekly Ranking TOP 10 / TOP 100": weeks finished in that range.
                 // Page 4 (Legends) "Matches": Legends rooms played; its combos are total/max_combination.
@@ -255,9 +246,7 @@ public sealed class AccountHandlers(
             var profile = options.CurrentValue.GameProfile;
             var (result, player) = await players.CreateForAccountAsync(
                 ctx.Session.AccountId, name, normalizedName, language,
-                options.CurrentValue.Rank.StartRating,
-                RankSystem.Applies(profile) ? RankSystem.Divisions[0] : "D3C",
-                ctx.CancellationToken);
+                options.CurrentValue.Rank.StartRating, ctx.CancellationToken);
 
             if (result != PlayerCreateResult.Created || player is null)
                 return [ctx.Fail("ERR_ALREADYEXISTS")];
@@ -339,7 +328,7 @@ public sealed class AccountHandlers(
         // A fresh profile starts at the rank system's start rating, in D5.
         if (RankSystem.Applies(options.CurrentValue.GameProfile))
         {
-            RankSystem.Normalize(player, options.CurrentValue.Rank, options.CurrentValue.GameProfile);
+            RankSystem.Normalize(player, options.CurrentValue.Rank);
             await players.SaveAsync(ctx.CancellationToken);
         }
 
