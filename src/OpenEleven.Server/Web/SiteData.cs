@@ -63,7 +63,8 @@ public static class SiteData
     public static List<MatchEventRow> Events(MatchRecord match)
         => match.Events.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.Split('|'))
-            .Where(f => f.Length >= 3)
+            // FOUL and MATCHINFO are bookkeeping for the community records, not match events.
+            .Where(f => f.Length >= 3 && f[0] is not ("FOUL" or "MATCHINFO"))
             .Select(f => new MatchEventRow(
                 PeriodNames[MatchSheet.PeriodOf(f[1])],
                 f[0] switch
