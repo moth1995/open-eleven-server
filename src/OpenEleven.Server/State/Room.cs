@@ -78,6 +78,9 @@ public sealed class Room
     /// <summary>The league fixture this room plays (CMD_APPLY_COMMU_MATCH); 0 for any other room.</summary>
     public int LeagueMatchId { get; set; }
 
+    /// <summary>The competition a "To Next Match" pairing plays for; 0 when the room is not one.</summary>
+    public int CompeId { get; set; }
+
     /// <summary>Serializes the first CMD_GET_MATCHID of each player, which opens the match record.</summary>
     public SemaphoreSlim MatchIdGate { get; } = new(1, 1);
 

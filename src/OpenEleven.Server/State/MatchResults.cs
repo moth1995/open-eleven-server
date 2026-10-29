@@ -75,6 +75,7 @@ public sealed class MatchResults(
                 AwayPid = lineup.Away,
                 Ranked = room.MatchType == "OC_RANKING",
                 CommuId = Hub.CommunityOfBlock(room.BlockId),
+                CompeId = room.CompeId,
                 Completed = false,
             };
             db.Matches.Add(record);
@@ -183,6 +184,7 @@ public sealed class MatchResults(
             record.DisconnectedPid = leaverPid;
             record.Ranked = ranked;
             record.CommuId = Hub.CommunityOfBlock(room.BlockId);
+            record.CompeId = room.CompeId;
             record.Rated = rated;
             record.Settings = new KvWriter().Write(settings).TrimEnd('\0');
             record.HomePeriods = MatchSheet.Format(sheet.Home);

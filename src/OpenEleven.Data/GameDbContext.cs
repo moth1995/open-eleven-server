@@ -66,6 +66,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             e.HasIndex(x => x.HomePid);
             e.HasIndex(x => x.AwayPid);
             e.HasIndex(x => x.PlayedAt);
+            e.HasIndex(x => x.CompeId);
         });
 
         b.Entity<InformationItem>(e => e.HasKey(x => x.Id));

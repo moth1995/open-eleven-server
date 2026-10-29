@@ -183,6 +183,10 @@ public sealed class MatchRecord
     public int AwayScore { get; set; }
     public int HomeTeamId { get; set; }
     public int AwayTeamId { get; set; }
+
+    /// <summary>The competition (config id) the match was played for, 0 for any other.</summary>
+    public int CompeId { get; set; }
+
     public bool Disconnected { get; set; }
     public int? DisconnectedPid { get; set; }
 
