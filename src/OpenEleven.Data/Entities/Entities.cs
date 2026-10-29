@@ -335,6 +335,22 @@ public sealed class WeeklyRankingEntry
     public Division Division { get; set; }
 }
 
+/// <summary>
+/// A player's avatar picture as CMD_SET_AVATAR uploaded it (PES 2012+). Its own table so the
+/// 12 KB picture is not loaded with every player query.
+/// </summary>
+public sealed class PlayerAvatar
+{
+    public int Pid { get; set; }
+
+    [MaxLength(12288)]
+    public byte[] Data { get; set; } = [];
+
+    /// <summary>The client's own checksum, kept as sent; CMD_GET_AVATAR hands it back.</summary>
+    [MaxLength(32)]
+    public string Md5 { get; set; } = "";
+}
+
 /// <summary>A community a player created (PES 2011 and later). The owner is also a <see cref="CommunityMember"/>.</summary>
 public sealed class Community
 {

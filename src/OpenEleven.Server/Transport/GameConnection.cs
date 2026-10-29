@@ -165,6 +165,11 @@ public sealed class GameConnection(
                 if (idleFor < timeout)
                     continue;
 
+                // A match in progress may say nothing for its whole length (PES 2012 sent no
+                // heartbeat for 5 minutes after kickoff); the room ending the match ends this.
+                if (session.RoomId is { } roomId && hub.FindRoom(roomId)?.Status == "GAME")
+                    continue;
+
                 logger.LogInformation(
                     "Closing {Session}: idle for {Seconds:F0}s (timeout {Timeout:F0}s)",
                     session, idleFor.TotalSeconds, timeout.TotalSeconds);
@@ -272,13 +277,13 @@ public sealed class GameConnection(
                     var debug = options.CurrentValue.Debug;
                     if (debug.LogOutboundPayloads)
                         logger.LogInformation(
-                            "OUT {Msg} rqid={Rqid} to {Session}\n{Payload}",
-                            message.MsgName, message.Rqid, session,
+                            "OUT {Msg} rqid={Rqid} bytes={Bytes} frames={Frames} to {Session}\n{Payload}",
+                            message.MsgName, message.Rqid, text.Length, frames.Count, session,
                             PacketLogFormatter.Format(message, text.TrimEnd('\0'), debug));
                     else
                         logger.LogInformation(
-                            "OUT {Msg} rqid={Rqid} to {Session}",
-                            message.MsgName, message.Rqid, session);
+                            "OUT {Msg} rqid={Rqid} bytes={Bytes} frames={Frames} to {Session}",
+                            message.MsgName, message.Rqid, text.Length, frames.Count, session);
                 }
                 else
                 {

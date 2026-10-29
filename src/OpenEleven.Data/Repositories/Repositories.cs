@@ -215,6 +215,7 @@ public sealed class PlayerRepository(GameDbContext db) : IPlayerRepository
 
         db.Players.Remove(player);
         await db.SaveChangesAsync(ct);
+        await db.Avatars.Where(a => a.Pid == player.Pid).ExecuteDeleteAsync(ct);
         return PlayerDeleteResult.Deleted;
     }
 

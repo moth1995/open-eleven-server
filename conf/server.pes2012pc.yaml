@@ -1,6 +1,7 @@
 Server:
   AdvertiseIp: "pes.example.com"   # your domain; an IP or "auto" only with Https.Enabled: false
   GameProfile: Pes2012Pc
+  LogFile: "logs/pes2012pc.log"
 
   Listen:
     Host: 0.0.0.0
@@ -31,32 +32,32 @@ Server:
     - Role: Gate
       Name: Gate
       Gid: 1
-      Port: 28016
+      Port: 19010
       MaxPlayers: 1000
     - Role: FdLobby
       Name: FdLobby
       Gid: 2
-      Port: 28031
+      Port: 19011
       MaxPlayers: 1000
     - Role: Lobby
       Name: Open Eleven Server
       Gid: 3
-      Port: 28032
+      Port: 19012
       MaxPlayers: 1000
     - Role: Menu
       Name: Menu
       Gid: 4
-      Port: 28033
+      Port: 19013
       MaxPlayers: 1000
     - Role: Account
       Name: Account
       Gid: 5
-      Port: 28034
+      Port: 19014
       MaxPlayers: 1000
     - Role: VdpChat
       Name: VdpChat
       Gid: 6
-      Port: 28035
+      Port: 19015
       MaxPlayers: 1000
 
   Lobbies:

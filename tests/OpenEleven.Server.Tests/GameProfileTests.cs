@@ -104,6 +104,7 @@ public class GameProfileTests
     [Theory]
     [InlineData(GameProfile.Pes2010Pc)]
     [InlineData(GameProfile.Pes2011Pc)]
+    [InlineData(GameProfile.Pes2012Pc)]
     public void Usable_team_lists_fit_the_client_whitelist(GameProfile profile)
     {
         var teams = TitleProfiles.UseableTeams(profile);

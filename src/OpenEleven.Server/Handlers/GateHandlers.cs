@@ -79,6 +79,22 @@ public sealed class GateHandlers(
     public ValueTask<KvMessage[]> Disconnect(CommandContext ctx)
         => Reply.Of(ctx.Ok().SetList("server_num", "server_list", catalog.BuildPes2011Entries()));
 
+    /// <summary>
+    /// The server-wide knobs the client reads once (they sit between the version/date keys and
+    /// <c>url_num</c> in the client's key table). A 0 level or warning threshold switches the
+    /// warning off. The community limits are only read once communities exist, so they are
+    /// placeholders.
+    /// </summary>
+    [Command("CMD_GET_SERVER_ENV", Roles = ServiceRole.All, Profiles = GameProfiles.Since2012, RequiredState = SessionState.Connected)]
+    public ValueTask<KvMessage[]> GetServerEnv(CommandContext ctx)
+        => Reply.Of(ctx.Ok()
+            .Set("normalend_all_rate_level", 0)
+            .Set("normalend_10_rate_level", 0)
+            .Set("manner_warning_at_login", 0)
+            .Set("manner_warning_at_result", 0)
+            .Set("commu_member_limited_max_num", 50)
+            .Set("commu_topic_limited_max_num", 100));
+
     [Command("CMD_GET_SVRVERSION", Roles = AnyServiceRole, RequiredState = SessionState.Connected)]
     public ValueTask<KvMessage[]> GetVersion(CommandContext ctx)
     {

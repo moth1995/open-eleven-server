@@ -215,6 +215,13 @@ public sealed class Room
 
             if (session.GameEntryNo < 0)
                 session.GameEntryNo = NextFreeGameEntryNo();
+
+            // The owner hosts the P2P match and takes game slot 0 even when a guest pressed
+            // entry first. PES 2012 matches stalled at kickoff every time a guest held slot 0.
+            if (session.Pid == OwnerPid && session.GameEntryNo != 0
+                && _members.FirstOrDefault(m => m.GameEntryNo == 0) is { } first)
+                (first.GameEntryNo, session.GameEntryNo) = (session.GameEntryNo, 0);
+
             session.GameSide = side;
             return true;
         }

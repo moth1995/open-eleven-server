@@ -156,4 +156,33 @@ public sealed class RankHandlers(GameDbContext db, TimeProvider time, ILogger<Ra
 
     private static KvMessage Week(KvMessage entry, int start)
         => entry.Set("start_date", start).Set("end_date", start + 7 * 24 * 3600 - 1);
+
+    /// <summary>
+    /// Share of the player's matches that ended normally, in percent. The server keeps no
+    /// per-match history yet, so the last-10 and last-login figures repeat the overall one.
+    /// </summary>
+    [Command("CMD_GET_NORMALEND_RATE", Roles = ServiceRole.Menu, Profiles = GameProfiles.Since2012)]
+    public async ValueTask<KvMessage[]> GetNormalEndRate(CommandContext ctx)
+    {
+        var stats = await db.PlayerStats.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.PlayerId == ctx.Session.Pid, ctx.CancellationToken);
+        var rate = stats is { MatchCount: > 0 }
+            ? Math.Clamp((stats.MatchCount - stats.DisconnectCount) * 100 / stats.MatchCount, 0, 100)
+            : 100;
+
+        return [ctx.Ok()
+            .Set("normalend_10_rate", rate)
+            .Set("normalend_all_rate", rate)
+            .Set("lastlogin_normalend_10_rate", rate)
+            .Set("lastlogin_normalend_all_rate", rate)];
+    }
+
+    /// <summary>
+    /// Master League division report shown at login (request: svrtype, pid). Master League is
+    /// not served, so nothing ever changed.
+    /// </summary>
+    [Command("CMD_GET_ML_DIVISIONUPDATE", Roles = ServiceRole.Account | ServiceRole.Menu, Profiles = GameProfiles.Since2012,
+        RequiredState = SessionState.Authenticated)]
+    public ValueTask<KvMessage[]> GetMlDivisionUpdate(CommandContext ctx)
+        => Reply.Of(ctx.Ok().Set("is_update", "NO"));
 }
