@@ -358,17 +358,49 @@ public sealed class AccountHandlers(
             reply.Set("useable_team_id", new KvArray(teams.Cast<object?>().ToArray()));
 
         var (mailCount, newMail) = await MailHandlers.InboxStateAsync(db, player.Pid, ctx.CancellationToken);
-        return
-        [
+        reply
+            .Set("mailcount", mailCount)
+            .Set("newmail", newMail)
+            .Set("chat_probi", false)
+            .Set("camera_probi", false)
+            .Set("voice_probi", false)
+            .Set("band_probi", false)
+            .Set("first_login", ctx.Session.FirstLogin);
+
+        // pes2012.exe (FUN_0053ed70) reads this reply all or nothing: one missing key and it skips
+        // the team list too, so both clients forfeit at Start Match. The match grades the link as
+        // the worse of ping and loss (FUN_010f6a90) and abandons with reason DEGRADE below red.
+        // Loss is divided by 100 and the game's own defaults are 0.5/1.0/1.5 (0 = use them).
+        // Green and yellow only pick the input delay (green/yellow/red_delay); red is the cut-off,
+        // so it is set as far as it goes (ping is a ushort, loss a percentage) and a slow link
+        // plays with more delay instead of being dropped. The grade also falls one step per 3 s
+        // without a packet from the peer (FUN_010f5380); no setting reaches that. Band is not
+        // part of the grade and defaults to 0 in the client. The kickoff keys use the client's own
+        // fallbacks: delay_frame_2/4players 4/6 and max_input_delay_frames 90 (FUN_00e79130),
+        // check_lobbygame_ping_diff 100000 and check_game_ping_max 100001 (FUN_010ee430/410);
+        // ntlserver's 2/4/8/200/500 were in place when matches froze on the pitch at kickoff. P2P timeout,
+        // lossframe_match and the grade delays come from ntlserver's ntl.yaml.
+        // ponytail: fixed tuning, move to ServerOptions if anyone needs to adjust it.
+        if (options.CurrentValue.GameProfile.IsSince2012())
             reply
-                .Set("mailcount", mailCount)
-                .Set("newmail", newMail)
-                .Set("chat_probi", false)
-                .Set("camera_probi", false)
-                .Set("voice_probi", false)
-                .Set("band_probi", false)
-                .Set("first_login", ctx.Session.FirstLogin),
-        ];
+                .Set("green_ping", 100).Set("green_band", 0).Set("green_loss", 50)
+                .Set("yellow_ping", 200).Set("yellow_band", 0).Set("yellow_loss", 100)
+                .Set("red_ping", 65535).Set("red_band", 0).Set("red_loss", 10000)
+                .Set("green_delay", 2).Set("yellow_delay", 4).Set("red_delay", 6)
+                .Set("p2ptimeout", 30000)
+                .Set("lossframe_match", 30)
+                .Set("avg_max_combination", 0)
+                .Set("avg_total_combination", 0)
+                .Set("invite_num", 8)
+                .Set("check_lobbygame_ping_diff", 100000)
+                .Set("check_game_ping_max", 100001)
+                .Set("mcount10flg", false)
+                .Set("delay_frame_2players", 4)
+                .Set("delay_frame_4players", 6)
+                .Set("max_input_delay_frames", 90)
+                .Set("proto_opt", "0");
+
+        return [reply];
     }
 
     /// <summary>
