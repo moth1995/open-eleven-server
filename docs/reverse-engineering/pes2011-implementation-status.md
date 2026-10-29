@@ -336,3 +336,21 @@ Community match rooms: the client never joins a lobby, so `CMD_SET_CURRENT_COMMU
   phase has saved the match, so it is appended to the saved record's events
   (`MatchResults.AppendEventAsync`); only the host's report is kept.
 
+## Competitions (KONAMI CUP ONLINE) — client requirements found
+
+- `CMD_JOIN_COMPLG` NOERR must carry `is_select_team` (YES/NO, `FUN_0055f140`); without it the client treats the join as failed and stays on the detail page. Sent NO (no team is kept per entry).
+- Qualifying round screens: `CMD_REQWATCH_COMPLG_PLAYERNUM` → `player_num` only (`FUN_00560500`); `CMD_GET_COMPLG_MATCH_START_TIME` → `is_waiting_time` TRUE|FALSE (+ `match_start_time` when TRUE, `FUN_00561180`).
+- Rankings (`PRE_RESULTS`, `GOALRANKING`, `ASSISTRANKING`) open with `rank_num`, `start_rank`, `rank_count`, `rank_list`; `PRE_RESULTS` also needs `compe_name` and `date`. They answer empty: no competition match is played or recorded yet.
+- `CMD_GET_COMPLG_MYRESULTS` needs `team_id`, a non-empty `team_name`, `my_rank`, `match_result_num` (<= 20) and `match_result_list`. `CMD_SET_COMPLG_TEAM` (team_id, team_name, member_num, member[]) is kept on the player and played back by `CMD_GET_COMPLG_TEAM_DATA` (`ERR_COMPE_NOT_SELECT_TEAM` until one is picked); the popularity ranking counts the picks. The client ends the member list with a comma (`member=[{..},{..},]`), which `KvReader` accepts.
+- Still not handled (no competition match flow yet): `CMD_GET_COMPLG_TOURNAMENT`, `PLAYOFF_MATCH`, `PLAYOFF_PLAY_OK`, `PLAYOFF_RESULTS`, `COMMENDATION_DATA`, `DIGESTLIST`, `REQWATCHL_COMPLG_MATCHLIST`, `QUIT_COMPLG`, `CREATE_COMPLG`, `ADD_COMPLG_RESULTS`, and the pushes `WATCH_COMPLG_END`, `END_MATCH`, `GAMEDATA`, `MATCHNOTICE`, `MATCH_START`, `MATCH_START_TIME`.
+
+### Competition fields (enums from the master tables)
+
+- `compe_kind` (enum 0x0a, 80 names): UEFA_Champions_League, International_Club_Championship, International_Cup_Online, KONAMI_CHAMPIONSHIP, **KONAMI_CUP_ONLINE**, WEPES_CLUB_OPEN, WEPES_NATIONAL_OPEN, WEPES_CHAMPIONSHIP, D1_Cup..D5_Cup, ML_* (13..25), RESERVED_CUP01..54. A name outside the table makes the client drop the whole reply. Normal lists always ask for KONAMI_CUP_ONLINE; the kind only filters `OLD_ALL` (past competitions).
+- `category` (enum 0x08): PLATINUM, GOLD, SILVER, BRONZE. Per-competition data kept by the client; the list request has no category field, so it filters nothing.
+- `entry_limit` (enum 0x09): WEEKRANK (uses `entry_limit_rank`) or DIVISION (uses the six `entry_limit_division` TRUE/FALSE flags, D5..D1 and NONE). `status` (enum 0x0e): NOCREATE, CREATED, PERMITSTART, ENTRY, STARTED, ENTRY_CLOSED, MATCH_CLOSED, FINISHED, CANSELED, END, CLEARED, DELETED.
+- `player_capacity`, `player_num`, `fee`, `guest_count` are plain unsigned numbers; no client-side upper bound was found in the list parser (`FUN_0055cdb0`). Other detail keys: `champion_notice`, `is_coach_mode`, `need_konamiid`, `use_national`/`use_club`/`use_ml`, `gametime` (3 entries: preliminary, playoff, final), `usable_ball_pre/playoff/final_num`, optional `banner_file_name` (<= 15), `ad_file_name`, `get_ball_id`, `get_spike_id`.
+- Qualifying round screen menu: a carousel that starts at the item last used, so earlier items are scrolled out of view (exit last -> only the exit icon). Not server state.
+- "To Next Match" sends `MSG_QUICK_REQ_MATCHING_START` with `type="COMPE"`; the quick-match queue pairs it like any other type for now.
+- `CMD_GET_COMPLG_TEAM_DATA` (`FUN_005640f0`) drops the reply unless it has top-level `pid` and `name` as well as `team_id`, `team_name`, `member_num`, `member`; without them the competition match aborts right after the squad arrives.
+- A "To Next Match" room carries `Room.CompeId` (both entrants' competition), copied to `MatchRecord.CompeId`. Qualifying round data is worked out from those records: standings (`CMD_GET_COMPLG_PRE_RESULTS`, 3 points a win, 1 a draw), goal/assist rankings, `CMD_GET_COMPLG_MYRESULTS` (match_result_list entry = date + home/away sides: pid, manner, rating, team_id, name, division, is_guest_player TRUE|FALSE, npid, team_name, score{score_1st,score_2nd,score_ex1st,score_ex2nd,score_pk}) and the per-footballer goal/assist/cards laid over `CMD_GET_COMPLG_TEAM_DATA` members. Matches played before `CompeId` existed have 0 and do not count.
