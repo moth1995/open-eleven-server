@@ -124,6 +124,18 @@ public sealed class Player
     /// </summary>
     public int CompetitionId { get; set; }
 
+    /// <summary>
+    /// The team the player picked for <see cref="CompetitionId"/> (CMD_SET_COMPLG_TEAM): team id
+    /// (0 = none picked), its name and the client's <c>member</c> list as sent, played back as is.
+    /// </summary>
+    public int CompetitionTeamId { get; set; }
+
+    [MaxLength(150)]
+    public string CompetitionTeamName { get; set; } = "";
+
+    [MaxLength(16384)]
+    public string CompetitionTeam { get; set; } = "";
+
     public DateTime? LastPlayedAt { get; set; }
 
     /// <summary>Completed matches since manner last moved; ten clean ones win a step back.</summary>

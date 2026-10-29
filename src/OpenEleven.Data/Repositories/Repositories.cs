@@ -18,6 +18,9 @@ public interface IPlayerRepository
     Task<IReadOnlyList<Player>> GetLeaderboardAsync(int limit, CancellationToken ct = default);
     Task<int> CountInCompetitionAsync(int competitionId, CancellationToken ct = default);
 
+    /// <summary>How many entrants of the competition picked each team (teams picked at least once).</summary>
+    Task<IReadOnlyList<(int TeamId, int Players)>> GetCompetitionTeamCountsAsync(int competitionId, CancellationToken ct = default);
+
     /// <summary>Keeps a record of the player entering the competition (once per competition).</summary>
     Task RecordCompetitionEntryAsync(int pid, int competitionId, string kind, string name, CancellationToken ct = default);
 
@@ -147,6 +150,12 @@ public sealed class PlayerRepository(GameDbContext db) : IPlayerRepository
 
     public async Task<IReadOnlyList<CompetitionEntry>> GetCompetitionEntriesAsync(int pid, CancellationToken ct = default)
         => await db.CompetitionEntries.AsNoTracking().Where(e => e.Pid == pid).OrderBy(e => e.Id).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<(int TeamId, int Players)>> GetCompetitionTeamCountsAsync(int competitionId, CancellationToken ct = default)
+        => (await db.Players.AsNoTracking().Where(p => p.CompetitionId == competitionId && p.CompetitionTeamId > 0)
+                .GroupBy(p => p.CompetitionTeamId).Select(g => new { TeamId = g.Key, Players = g.Count() })
+                .OrderByDescending(g => g.Players).ThenBy(g => g.TeamId).ToListAsync(ct))
+            .Select(g => (g.TeamId, g.Players)).ToList();
 
     public async Task<IReadOnlyList<int>> GetRecentTeamsAsync(int pid, int count, CancellationToken ct = default)
         => await db.Matches
