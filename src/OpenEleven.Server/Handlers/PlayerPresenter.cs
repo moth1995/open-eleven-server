@@ -50,7 +50,7 @@ public static class PlayerPresenter
     /// reported at its last login.
     /// </summary>
     public static KvMessage FillPlayerInfo(KvMessage message, Player p, GameProfile profile, bool listSyntax = false,
-        IReadOnlyList<int>? recentTeams = null)
+        IReadOnlyList<int>? recentTeams = null, IReadOnlyList<KvMessage>? competitions = null)
     {
         var s = p.Stats;
         var teams = new object?[5];
@@ -98,7 +98,9 @@ public static class PlayerPresenter
             .Set("desired_position", listSyntax
                 ? new KvArray(DesiredPositions(p.DesiredPositionMask).Values)
                 : DesiredPositions(p.DesiredPositionMask))
-            .Set("list_num", 0);
+            .Set("list_num", competitions?.Count ?? 0);
+        if (competitions is { Count: > 0 })
+            message.Set("compe_list", competitions);
         return message;
     }
 

@@ -18,6 +18,12 @@ public interface IPlayerRepository
     Task<IReadOnlyList<Player>> GetLeaderboardAsync(int limit, CancellationToken ct = default);
     Task<int> CountInCompetitionAsync(int competitionId, CancellationToken ct = default);
 
+    /// <summary>Keeps a record of the player entering the competition (once per competition).</summary>
+    Task RecordCompetitionEntryAsync(int pid, int competitionId, string kind, string name, CancellationToken ct = default);
+
+    /// <summary>The competitions the player has ever entered, oldest first.</summary>
+    Task<IReadOnlyList<CompetitionEntry>> GetCompetitionEntriesAsync(int pid, CancellationToken ct = default);
+
     /// <summary>Teams the player used in its latest completed matches, newest first.</summary>
     Task<IReadOnlyList<int>> GetRecentTeamsAsync(int pid, int count, CancellationToken ct = default);
     /// <summary>Creates the account's profile with the title's starting rating, in the lowest division.</summary>
@@ -126,6 +132,21 @@ public sealed class PlayerRepository(GameDbContext db) : IPlayerRepository
 
     public Task<int> CountInCompetitionAsync(int competitionId, CancellationToken ct = default)
         => db.Players.CountAsync(p => p.CompetitionId == competitionId, ct);
+
+    public async Task RecordCompetitionEntryAsync(int pid, int competitionId, string kind, string name, CancellationToken ct = default)
+    {
+        if (await db.CompetitionEntries.AnyAsync(e => e.Pid == pid && e.CompeId == competitionId, ct))
+            return;
+
+        db.CompetitionEntries.Add(new CompetitionEntry
+        {
+            Pid = pid, CompeId = competitionId, Kind = kind, Name = name, JoinedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<CompetitionEntry>> GetCompetitionEntriesAsync(int pid, CancellationToken ct = default)
+        => await db.CompetitionEntries.AsNoTracking().Where(e => e.Pid == pid).OrderBy(e => e.Id).ToListAsync(ct);
 
     public async Task<IReadOnlyList<int>> GetRecentTeamsAsync(int pid, int count, CancellationToken ct = default)
         => await db.Matches

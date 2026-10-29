@@ -192,8 +192,15 @@ public sealed class AccountHandlers(
 
             var teams = await players.GetRecentTeamsAsync(player.Pid, 5, ctx.CancellationToken);
 
+            // Competitions entered, one line per kind: the competition menu totals them. Nothing records
+            // the knockout rounds or the prizes yet, so those stay 0.
+            var competitions = (await players.GetCompetitionEntriesAsync(player.Pid, ctx.CancellationToken))
+                .GroupBy(e => e.Kind)
+                .Select(g => new KvMessage().Set("compe_name", g.Last().Name).Set("compe_kind", g.Key).Set("mode", "NORMAL")
+                    .Set("prize_num", 0).Set("playoff_num", 0).Set("join_num", g.Count()))
+                .ToList();
             var reply = PlayerPresenter.FillPlayerInfo(ctx.Ok(), player, ctx.Profile,
-                listSyntax: true, teams);
+                listSyntax: true, teams, competitions);
             if (ctx.Profile.IsModern())
             {
                 // Profile page 2 "Weekly Ranking TOP 10 / TOP 100": weeks finished in that range.

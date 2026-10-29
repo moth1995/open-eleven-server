@@ -459,7 +459,30 @@ public sealed class CommunityLeagueMatch
     public long PlayedAt { get; set; }
 }
 
-//// <summary>Small server bookkeeping values (last processed week and season).</summary>
+/// <summary>
+/// A competition a player has entered (CMD_JOIN_COMPLG), kept after the entry ends: the competition
+/// menu counts these (PLAYERINFO <c>compe_list</c>: join_num per kind).
+/// </summary>
+public sealed class CompetitionEntry
+{
+    public int Id { get; set; }
+
+    public int Pid { get; set; }
+
+    public int CompeId { get; set; }
+
+    /// <summary>The competition's compe_kind and name when it was entered.</summary>
+    [MaxLength(48)]
+    public string Kind { get; set; } = "";
+
+    [MaxLength(96)]
+    public string Name { get; set; } = "";
+
+    /// <summary>Unix seconds.</summary>
+    public long JoinedAt { get; set; }
+}
+
+/// <summary>Small server bookkeeping values (last processed week and season).</summary>
 public sealed class ServerSetting
 {
     [MaxLength(64)]

@@ -27,6 +27,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<CommunityLeagueMember> CommunityLeagueMembers => Set<CommunityLeagueMember>();
     public DbSet<CommunityLeagueCell> CommunityLeagueCells => Set<CommunityLeagueCell>();
     public DbSet<CommunityLeagueMatch> CommunityLeagueMatches => Set<CommunityLeagueMatch>();
+    public DbSet<CompetitionEntry> CompetitionEntries => Set<CompetitionEntry>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
