@@ -124,12 +124,12 @@ the framing is listed as verified rather than assumed.
 | Feature | Where | Evidence |
 |---|---|---|
 | Frame reuse for PES 2011 | `Protocol/Framing`, `Protocol/Crypto` | `FUN_01006660`; keys at `0x01569084` / `0x0160c6b0` |
-| First command `NETCLIENT` | `Pes2011Handlers.NetClient` | `FUN_0050d880`, `FUN_005228a0` |
-| Gate self-registration `CMD_REG_SVRLIST` | `Pes2011Handlers.RegisterServerList` | `FUN_00512320` |
-| Server list in the PES 2011 shape | `Pes2011Handlers.GetServerList`, `ServerCatalog` | `FUN_00ffd160`, `0x013ba1a4`, `0x013ba23c` |
+| First command `NETCLIENT` | `Gate2011Handlers.NetClient` | `FUN_0050d880`, `FUN_005228a0` |
+| Gate self-registration `CMD_REG_SVRLIST` | `Gate2011Handlers.RegisterServerList` | `FUN_00512320` |
+| Server list in the PES 2011 shape | `GateHandlers.GetServerList`, `ServerCatalog` | `FUN_00ffd160`, `0x013ba1a4`, `0x013ba23c` |
 | `svrtype` restricted to the five parsed values | `ServiceRoleExtensions.ToPes2011SvrType` | `0x013ba23c` |
-| Login stage 1 `CMD_AUTH_GAMEID` (mints a ticket) | `Pes2011Handlers.AuthGameId`, `GameIdTicketStore` | `FUN_0061c360` state 2 |
-| Login stage 2 `CMD_LOGIN` (redeems the ticket) | `Pes2011Handlers.Login` | `FUN_0061c360` state 7, `account_first_login` |
+| Login stage 1 `CMD_AUTH_GAMEID` (mints a ticket) | `Gate2011Handlers.AuthGameId`, `GameIdTicketStore` | `FUN_0061c360` state 2 |
+| Login stage 2 `CMD_LOGIN` (redeems the ticket) | `Gate2011Handlers.Login` | `FUN_0061c360` state 7, `account_first_login` |
 | Cached-ticket replay across connections | `GameIdTicketStore` (not single-use) | `FUN_0061c360` state 1 |
 | Credential redaction in packet logs | `PacketLogFormatter.Redact` | local policy; verified by test + log inspection |
 | `CMD_GET_URLLIST` needs **no** PES 2011 variant — the shared handler's `url_num`/`ulist` shape and its four `type` tokens are all in this binary's vocabulary | shared `GateHandlers` | `0x012e4a20`, `0x013bee08`–`0x013bee90` |
