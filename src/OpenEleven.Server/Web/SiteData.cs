@@ -69,6 +69,9 @@ public static class SiteData
                 PeriodNames[MatchSheet.PeriodOf(f[1])],
                 f[0] switch
                 {
+                    // GOAL|phase|credited side|pid|player|scorer's side|...: a scorer from the
+                    // other side is an own goal. Every title sends goal_player_side.
+                    "GOAL" when f.Length > 5 && f[5] is "HOME" or "AWAY" && f[5] != f[2] => "Own goal",
                     "GOAL" => "Goal",
                     "CARD" when f.Length > 3 && f[3] == "RED" => "Red card",
                     "CARD" => "Yellow card",
