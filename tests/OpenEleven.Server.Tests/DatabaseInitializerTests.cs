@@ -136,6 +136,34 @@ public sealed class DatabaseInitializerTests
         }
     }
 
+    // A database made before communities existed has no such tables; the first start must add them.
+    [Fact]
+    public async Task Adds_the_community_tables_to_an_existing_database()
+    {
+        var databaseFile = Path.Combine(Path.GetTempPath(), $"OpenEleven-community-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var connectionString = $"Data Source={databaseFile};Pooling=False";
+            await CreateLegacyDatabaseAsync(connectionString);
+
+            var options = new DbContextOptionsBuilder<GameDbContext>().UseSqlite(connectionString).Options;
+            await using var db = new GameDbContext(options);
+            await new DatabaseInitializer(db, NullLogger<DatabaseInitializer>.Instance).InitializeAsync();
+
+            db.Communities.Add(new Community { OwnerPid = 1, Name = "Club" });
+            await db.SaveChangesAsync();
+            db.CommunityMembers.Add(new CommunityMember { CommuId = db.Communities.Single().Id, Pid = 1 });
+            await db.SaveChangesAsync();
+
+            Assert.Equal(1, await db.CommunityMembers.CountAsync());
+        }
+        finally
+        {
+            File.Delete(databaseFile);
+        }
+    }
+
     [Fact]
     public async Task Removes_only_the_untouched_legacy_demo_account_and_profile()
     {

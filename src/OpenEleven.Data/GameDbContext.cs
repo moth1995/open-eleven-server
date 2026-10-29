@@ -21,6 +21,12 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<ShortMail> ShortMails => Set<ShortMail>();
     public DbSet<WeeklyRankingEntry> WeeklyRankings => Set<WeeklyRankingEntry>();
     public DbSet<ServerSetting> Settings => Set<ServerSetting>();
+    public DbSet<Community> Communities => Set<Community>();
+    public DbSet<CommunityMember> CommunityMembers => Set<CommunityMember>();
+    public DbSet<CommunityLeague> CommunityLeagues => Set<CommunityLeague>();
+    public DbSet<CommunityLeagueMember> CommunityLeagueMembers => Set<CommunityLeagueMember>();
+    public DbSet<CommunityLeagueCell> CommunityLeagueCells => Set<CommunityLeagueCell>();
+    public DbSet<CommunityLeagueMatch> CommunityLeagueMatches => Set<CommunityLeagueMatch>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -97,5 +103,38 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         });
 
         b.Entity<ServerSetting>(e => e.HasKey(x => x.Key));
+
+        b.Entity<Community>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.OwnerPid);
+        });
+
+        b.Entity<CommunityLeague>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CommuId);
+        });
+
+        b.Entity<CommunityLeagueMember>(e => e.HasKey(x => new { x.CompeId, x.Pid }));
+
+        b.Entity<CommunityLeagueMatch>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CompeId);
+        });
+
+        b.Entity<CommunityLeagueCell>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CompeId);
+        });
+
+        // No foreign keys: a deleted player's rows are skipped by the joins instead of cascading.
+        b.Entity<CommunityMember>(e =>
+        {
+            e.HasKey(x => new { x.CommuId, x.Pid });
+            e.HasIndex(x => x.Pid);
+        });
     }
 }
