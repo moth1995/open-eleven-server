@@ -401,6 +401,49 @@ stayed on the room screen with no roster/state and one left after a few seconds.
 `MSG_QUICK_REQ_MATCHING_START` still pairs only equal `type|player_num|game_time|frrate`.
 A "free 2vs2" (`player_num=4`) search with two clients cannot form a match by design.
 
+### PES2012 room list visibility
+
+PES2012 uses the modern `CMD_REQWATCHL_ROOMLIST` watch. A newly created room was invisible
+to the other player because of these defects:
+
+- room creation now publishes the first delta as `ADD` (the watch handler inserts by
+  `room_id`; later changes still publish `UPDATE`).
+- the decisive defects: `Pes2011Lists.RoomEntry` wrote the room teams as
+  `team=[home,away]`, the flags as `team_flag=[...]`, and sent no `score` at all.
+  pes2012's room parser reads the literal keys `team[0]`, `team[1]`,
+  `team_flag[0..2]` and `score[0..1]` (`FUN_0053BB50`, `FUN_0053E650`,
+  `FUN_0053E740`). A missing entry makes the row drop. PES2012+ now gets flat
+  indexed keys and two zeroed score records; PES2011 keeps the bracketed forms.
+
+Both the creator and the other block watchers receive the ADD entry, so the creator's own
+room-list cache also has the row its room screen draws from.
+
+In-room user list (`CMD_REQWATCHL_ROOMPLAYERLIST`): `FUN_0069C0B0` reads the literal `pid`
+and `desiredPosition[0..13]` (14 slots). PES2012+ now gets flat indexed positions, plus
+`gameplayer_id`, `mpid`, `guest_mpid`, `xuid`, `division`, `rating`, `is_restricted`,
+`fd_selfreport_level`, `fd_position_want`, `player_name` and `lang`. The bracketed
+13-entry `desiredPosition` was why opening the user list inside a room errored.
+
+The block-roster entry a room gamer is resolved through now also carries the player's
+`room_id`: creating or joining a room publishes the updated block entry. Without it the
+watcher's cached roster still said `room_id=0` while the room list row existed.
+
+A room row is only accepted when every gamer pid already exists in the client's block
+roster pool: `FUN_0053D650` calls `FUN_0053BBF0`, which resolves the pid through
+`FUN_0052D090` and aborts the whole row on `-1`. The pool is rebuilt from each
+`CMD_REQWATCHL_BLOCKPLAYERLIST` payload, so a block-roster delta must stay a full roster
+for the room owner, otherwise its rooms cannot be rendered.
+
+### PES2012 quick match
+
+`MSG_QUICK_MATCH_MEMBER_NOTICE` is parsed by `FUN_01105B90`. Every member entry must carry
+`matching_order, is_owner, pid, pname, has_guestplayer, is_begin, ex_ip, ex_port, in_ip,
+in_port, from_country, from_area, division, rating, ml_division, ml_point, ml_team_name,
+ml_base_team_id, ml_team_type, is_chat, is_nice, is_restricted`. One missing key makes the
+whole notice `ERR_CLIENT_SVRFORMAT`; the client then silently abandons the match and emits
+`CMD_CANCEL_STARTQUICKMATCH` a couple of seconds later. The `ml_*`, `is_chat`, `is_nice`
+and `is_restricted` fields were missing, which is why matching appeared to hang.
+
 ### Online kickoff crash: 2026-10-26 dump
 
 Confirmed for executable SHA-256
