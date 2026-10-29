@@ -142,6 +142,7 @@ public sealed class Hub(ILogger<Hub> log, IOptionsMonitor<ServerOptions> options
         session.FirstLogin = donor.FirstLogin;
         session.Pid = donor.Pid;
         session.PlayerName = donor.PlayerName;
+        session.Card = donor.Card;
         session.DesiredPositionMask = donor.DesiredPositionMask;
         session.EulaAccepted = donor.EulaAccepted;
         session.ChatEnabled = donor.ChatEnabled;

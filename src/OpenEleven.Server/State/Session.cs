@@ -60,6 +60,9 @@ public sealed class Session
     public bool FirstLogin { get; set; }
     public int Pid { get; set; }
     public string PlayerName { get; set; } = "";
+
+    /// <summary>What a room or block list shows about this player, taken when the profile is selected.</summary>
+    public PlayerCard Card { get; set; } = PlayerCard.Default;
     public string Language { get; set; } = "EN";
     public bool EulaAccepted { get; set; }
     public bool ChatEnabled { get; set; } = true;

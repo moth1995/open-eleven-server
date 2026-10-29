@@ -334,6 +334,8 @@ public sealed class AccountHandlers(
 
         ctx.Session.Pid = player.Pid;
         ctx.Session.PlayerName = player.Name;
+        ctx.Session.Card = new PlayerCard(RankSystem.Label(player.Division, ctx.Profile),
+            player.Rating, player.Lang, player.SelfReportLevel, player.PositionWant);
         ctx.Session.DesiredPositionMask = player.DesiredPositionMask;
         ctx.Session.ChatEnabled = player.ChatEnabled;
         ctx.Session.State = SessionState.PlayerSelected;
