@@ -238,3 +238,101 @@ The shortest path to a *client-tested* result is the real client at the path abo
    without a matching `OUT` line is the next thing to research.
 3. The likely first blocker is `CMD_GET_HTTP` (empty buffer) or the HTTP URLs `CMD_GET_URLLIST`
    advertises, since the PES 2010 flow depends on those being fetchable.
+
+## Communities (`CommunityHandlers`)
+
+Reply shapes read from `pes2011.exe`; the client accepts at most 5 joined communities and 32 members.
+
+| Command | Reply |
+|---|---|
+| `CMD_CREATE_COMMU` | `commu_id` |
+| `CMD_GET_JOINEDCOMMULIST` | `commu_num` (< 6) + `clist` (`FUN_005255a0`) |
+| `CMD_SEARCH_COMMU` | `commu_num` (<= 100), `total_found_num`, `mlist` of community entries (`FUN_005260f0`) |
+| `CMD_SEARCH_COMMU_BYRANKING` | `commu_num`, `mlist` of `{value, commu_info={entry}}` (`FUN_0054fe50`) |
+| `CMD_JOIN_COMMU` | result only |
+| `CMD_SET_CURRENT_COMMU` / `CMD_RESET_CURRENT_COMMU` | result only; the session keeps the current community, which settings, delete and the team/league lists act on |
+| `CMD_GET_COMMU_INFO` | `commu_info` = one community entry (`FUN_00529290`) |
+| `CMD_SET_COMMU_OPTION`, `CMD_DEL_COMMU`, `CMD_DEL_COMMU_MEMBER`, `CMD_WITHDRAW_COMMU` | result only; owner-only except withdraw (`ERR_NOTCOMMUOWNER`) |
+| `CMD_CREATE_COMMU_LEAGUE` | `compe_id` (the client treats a missing one as failure); at most 3 open per community (`ERR_COMMUCOMPEISFULL`) |
+| `CMD_GET_COMMU_LEAGUELIST` | `compe_num` (< 4) + `compe_list`: `compe_id`, `opening_date`, `entered_cell_count`, `finished_match_count`, `total_match_count`, `compe_chairman_info` (player block), `entry_info` (cells, see below), `env_setting` (`compe_name`, `comment` as text; `match_time` index, `injury`, `ball_type`, `home_and_away` as 16-bit numbers, not the names the request uses) (`FUN_00556e40`, `FUN_00554c70`) |
+| `CMD_GET_COMMU_LEAGUEENTRYCELLINFO` | `cell_info_num` (<= 20) + `clist` of cells: `cell_id`, `team_id`, `entry_user_count`, `entry_user_info` (player blocks) (`FUN_0054b190`) |
+| `CMD_ENTRY_COMMU_LEAGUECELL` | `joined_cell_id`; cell_id 0 opens a new cell (a guess: the client's request for a new cell has not been seen) |
+| `CMD_LEAVE_COMMU_LEAGUE` | result only; sent when the player backs out of the league menu (client-confirmed), so it only closes the league on their side and keeps their cell and team |
+| `CMD_DEL_COMMU_LEAGUEMEMBER`, `CMD_END_COMMU_LEAGUE` | result only; for the league's chairman or the community owner |
+| `CMD_SET_COMMU_TEAM` / `CMD_GET_COMMU_TEAM` | the cell's `team_id` and `member` list (gameplayer_id, goal, assist, uniform_number, cards, injury_all/one/data) are stored as sent and played back with `cell_id` and `member_num` (`FUN_00526ed0`, `FUN_00529070`, `FUN_0054e2c0`) |
+| `CMD_REQWATCHL_COMMU_COMPEMEMBERLIST` | the member list entry, for the league's members |
+| `CMD_GET_COMMU_PASTLEAGUELIST` | `list_num` (<= 20) + `rlist`: `compe_id`, `compe_name`, `opening_date`, `finish_date`, `user_count`, `compe_chairman_info` (`FUN_005542d0`) |
+| `CMD_GET_COMMU_TEAMLIST` | `list_num` (<= 400) + `team_list`, a plain list of team ids |
+| `CMD_GET_COMMU_MEMBERRANKING` | `data_num` (<= 32), `date`, `ranking_list`: `disp_rank`, `value`, `member_info` (`FUN_005533f0`) |
+| `CMD_GET_COMMU_TEAMRANKING` | `data_num` (<= 20), `date`, `ranking_list`: `team_id`, `disp_rank`, `value` (`FUN_00553c20`) |
+| `CMD_GET_COMMU_MEMBERSRESULTS` / `TEAMRESULTS` | `stats` = one entry of totals plus `{total_count, average}` lists (`FUN_00555ff0`); worked out from the community's matches |
+| `CMD_GET_COMMU_COMPERANKING` | `info_num` (<= 20), `date`, `i_list`: `team_rank_disp/point/win/draw/lose/score/lost/scorediff` + `entry_info` (a cell) (`FUN_0054d1c0`) |
+| `CMD_GET_COMMU_PASTLEAGUERESULT` | `info_num` (<= 20) + `ilist`, the same entry, for a finished league |
+| `CMD_GET_COMMU_COMPERESULT` | `info_num` (<= 380) + `mlist`: `played` (YES/NO), `home_id`, `home_pts`, `away_id`, `away_pts` (`FUN_0054dac0`) |
+| `CMD_GET_COMMU_GOALRANKING` / `ASSISTRANKING` | `data_num` (<= 20), `date`, `goal_ranking` / `assist_ranking`: `disp_rank`, `ga_count`, `entry_info` (a cell) (`FUN_0054c990`) |
+| `CMD_REQWATCHL_COMMU_PLAYABLEMATCHLIST` | `match_list` (<= 38) of `{match_id, home_team_info=[cell], away_team_info=[cell]}` (`FUN_0054b940`) |
+| `CMD_REQWATCHL_COMMU_MATCHLIST` | `match_list` (<= 38) of `{match_status (a game phase: ENTRY, END...), match=[the entry above], home_goal=[score], away_goal=[score]}`; a score is `score_1st/2nd/ex1st/ex2nd/pk` (`FUN_005556b0`, `FUN_0054c1f0`) |
+| `CMD_WATCH_COMMU_MATCH` | parked; a push of `compe_id`, `match_id`, `from_pid`, `room_id` (the other cell's offer, `FUN_005283e0`) |
+| `CMD_WATCH_COMMU_MATCH_WAITING` | parked; pushes `player_num` (<= 2) + `player_list` (player blocks of those who said yes), or `ERR_COMMUMATCHREFUSED` / `ERR_COMMUMATCHCANCELED` |
+| `CMD_APPLY_COMMU_MATCH`, `CMD_REPLY_COMMU_MATCH`, `CMD_CANCEL_COMMU_MATCH` | result only; apply puts a fixture up in the applicant's own room, reply is `YES` or anything else |
+| `CMD_GET_COMMU_MEMBERSRESULTS_VS`, `CMD_GET_COMMU_TEAMRESULTS_VS` | not on the socket: the client GETs the `COMMU_MEMBERS_VS` / `COMMU_TEAM_VS` url with `commu_id=..&base_pid=..&oppo_pid=..` (or `base_team_id`, `oppo_team_id`) after it (`FUN_011be170`) and takes the body as the reply: `result="NOERR",stats=[...]` (`FUN_011be0f0`, `FUN_00552990`) |
+
+League fixtures: every pair of cells plays, twice when the league is home and away. They are created as cells appear and dropped, if unplayed, when a cell goes. The offer (apply/reply/cancel) lives in memory; a room that played a fixture hands its score to the league when it ends. Whether the client sends a brand-new cell as `cell_id` 0, how it answers an offer and the exact strings of `reply` are still guesses.
+| `CMD_REQWATCHL_COMMU_MEMBERLIST` | `list_type=ADD`, `member_list_num` (<= 32), `member_list` (`FUN_005257a0`, `FUN_00549fb0`) |
+
+A member entry: `mode` (enum `NONE`/`NETWORK`/`COMPE`/`COMMUNITY`/...), `lobby_name`, `block_name`, `commu_name`, `commu_id`, `room_id`,
+`beginnermark`, `position_want`, `selfreport_level`, `desired_position` and `info` (one player block, as `owner_info`).
+
+A community entry (`FUN_0054e980`): `commu_id`, `member_count`, `logon_member_count`, `total_match_count`,
+`total_legends_count`, `total_compe_count`, `update_date`, `start_time`, `end_time`, `commu_name`,
+`commu_description`, `invite_only`, `password`, `week` (7 `YES`/`NO`, then an empty element) and
+`owner_info` (one entry: `pid`, `name`, `manner`, `division`, `rating`, `status`, `lang`, `index`, `npid`).
+`status` is enum `LOGIN`/`LOGOUT`/`COMMU_DELETED`. The client turns a non-empty `password` into "ask for a
+password", so everyone but the owner is sent `*` for a protected community.
+
+Unverified in game: the ranking entry nesting, the search page size (10), whether `start_time`/`end_time` are
+`HOUR_*` enum positions, and invite-only handling (hidden from search, not joinable: no invitations yet).
+Community match rooms: the client never joins a lobby, so `CMD_SET_CURRENT_COMMU` puts the session in a block of its own for that community (`Hub.CommunityBlockId`); its room list and rooms are the community's. Records and rankings come from `MatchRecord.CommuId` (set for rooms in a community block); fouls and the host's possession/shot figures are kept as `FOUL` and `MATCHINFO` event lines. Averages are whole numbers and their scale in the client is unverified. The head-to-head urls are advertised in the url list. The member list is a snapshot, not pushed.
+
+### Client-tested community fixes (2026-10-28)
+
+- Member list entries carry `info.index`: the client files each entry in a 32-slot array under it
+  (`FUN_00543d70`), so every entry needs its own index (all zeros broke joining as a member).
+- Member list `mode` is where the member is: `COMMUNITY` inside the open community, `COMMUNITY_COMPE`
+  (plus `compe_id`) inside the open league, `NETWORK` online elsewhere, `NONE` offline. The
+  "Membership Numbers" and "Number of Participants" counts are built from it. The community one is
+  client-confirmed (1/2); the league one (COMMUNITY_COMPE) is not yet.
+- `CMD_GET_GAMEPLAN` / `CMD_SET_GAMEPLAN` (`AccountHandlers`): the hex block is stored verbatim in
+  `Players.GamePlan`; nothing saved is `ERR_DATANOTFOUND`. Not yet checked in the client.
+- Chat channel `COMMUNITY_LEAGUE` reaches the participants of the league the sender has open.
+- The community and league member lists are watches (`CMD_REQWATCHL_COMMU_MEMBERLIST`,
+  `CMD_REQWATCHL_COMMU_COMPEMEMBERLIST`): the server keeps the rqid and pushes `list_type` ADD/UPDATE
+  (upsert by `info.pid`) or DEL deltas when a member joins, withdraws, is removed, opens or closes the
+  community, or joins, leaves or is removed from the league. A connection that just drops is not
+  pushed yet. The league's own counts (`entered_cell_count`, `total_match_count`) come from
+  `CMD_GET_COMMU_LEAGUELIST`, which is a plain request: they refresh when the screen is reopened.
+- A league cell holds exactly one player (`FUN_0054b190` reads a single player block per cell); the
+  client always asks for `cell_id` 0 and the server opens the cell.
+- **Starting league matches needs 3 participants (client rule).** The community menu builder
+  (`FUN_005cb7b0`) enables the league-match item from `FUN_005cb430`, which returns false unless the
+  league's member list (`CMD_REQWATCHL_COMMU_COMPEMEMBERLIST`, count at screen+`0xf6f0`) has at
+  least 3 entries (`FUN_00523860() < 3`). After that it needs a playable match: `total_match_count`
+  0 requires a non-empty `CMD_REQWATCHL_COMMU_PLAYABLEMATCHLIST`, otherwise `finished_match_count`
+  must differ from `total_match_count`. With two players the option never appears.
+- **The `CMD_WATCH_*` messages are never sent by the PES 2011 client** (not `CMD_WATCH_TEXTCHAT`,
+  `CMD_WATCH_COMMU_MATCH`, nor `CMD_WATCH_COMMU_MATCH_WAITING`; none appears in a full two-player
+  league session). The client only registers a handler by message name, so the server pushes them
+  unsolicited (rqid 1 when nothing is parked). A league challenge goes: `CMD_APPLY_COMMU_MATCH`
+  (after the client's own `CMD_CREATEJOIN_ROOM`), the offer is pushed as `CMD_WATCH_COMMU_MATCH`,
+  the opponent answers `CMD_JOIN_ROOM` + `CMD_REPLY_COMMU_MATCH`, and both players' "Matchmaking in
+  progress" screens are filled by a `CMD_WATCH_COMMU_MATCH_WAITING` list (`player_num`,
+  `player_list`: the applicant, then each player who said yes). What starts the match after that is
+  not yet known.
+- `CMD_GET_COMMU_TEAM` plays back the client's saved squad with each member's `goal`, `assist`,
+  `total_yellow_card` and `total_red_card` worked out from the events of the league's finished
+  matches (by the cell's side in each match and the event's `gameplayer_id`; the scorer's pid is 0
+  for some goals, so it is not used). `now_*_card_count` stay as the client saved them.
+- `CMD_SET_COMMU_MATCHINFO` (possession in hundredths, shots) arrives about a second after the end
+  phase has saved the match, so it is appended to the saved record's events
+  (`MatchResults.AppendEventAsync`); only the host's report is kept.
+
