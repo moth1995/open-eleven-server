@@ -209,23 +209,31 @@ public sealed class FriendHandlers(GameDbContext db, LobbyCatalog lobbies)
     }
 
     /// <summary>
-    /// Long-lived friend list / request subscriptions (FUN_0077dc90 state 3 arms both, then
-    /// FUN_0077db80 re-reads CMD_GET_FRIENDLIST once they answer). PES2010 needs the ACK;
-    /// the other titles keep the parked behaviour their parser was written for.
+    /// PES 2010's long-lived friend list / request subscriptions (FUN_0077dc90 state 3 arms both,
+    /// then FUN_0077db80 re-reads CMD_GET_FRIENDLIST once they answer). It needs the ACK, and
+    /// <see cref="PublishFriendListAsync"/> pushes changes to the sessions recorded here.
     /// </summary>
-    [Command("CMD_WATCH_FRIENDLIST", Roles = Roles)]
-    public ValueTask<KvMessage[]> WatchFriendList(CommandContext ctx)
+    [Command("CMD_WATCH_FRIENDLIST", Roles = Roles, Profiles = GameProfile.Pes2010Pc)]
+    public ValueTask<KvMessage[]> WatchFriendListPes2010(CommandContext ctx)
     {
         ctx.Session.FriendListWatchRqid = ctx.Rqid;
-        return ctx.Profile == GameProfile.Pes2010Pc ? Reply.Of(ctx.Ok()) : Reply.None();
+        return Reply.Of(ctx.Ok());
     }
 
-    [Command("CMD_WATCH_FRIENDREQ", Roles = Roles)]
-    public ValueTask<KvMessage[]> WatchFriendRequest(CommandContext ctx)
+    [Command("CMD_WATCH_FRIENDREQ", Roles = Roles, Profiles = GameProfile.Pes2010Pc)]
+    public ValueTask<KvMessage[]> WatchFriendRequestPes2010(CommandContext ctx)
     {
         ctx.Session.FriendRequestWatchRqid = ctx.Rqid;
-        return ctx.Profile == GameProfile.Pes2010Pc ? Reply.Of(ctx.Ok()) : Reply.None();
+        return Reply.Of(ctx.Ok());
     }
+
+    /// <summary>
+    /// The other titles park these without a reply (pes2011.exe FUN_00541810): a bare reply
+    /// would be taken as a delivery, and the friend screen re-reads CMD_GET_FRIENDLIST itself.
+    /// </summary>
+    [Command("CMD_WATCH_FRIENDLIST", Roles = Roles, Profiles = GameProfiles.Modern)]
+    [Command("CMD_WATCH_FRIENDREQ", Roles = Roles, Profiles = GameProfiles.Modern)]
+    public ValueTask<KvMessage[]> Watch(CommandContext ctx) => Reply.None();
 
     private async ValueTask<KvMessage[]> RemovePair(CommandContext ctx, int other)
     {
@@ -240,13 +248,10 @@ public sealed class FriendHandlers(GameDbContext db, LobbyCatalog lobbies)
     /// PES2010 keeps the friend and request lists in screen memory. Without this, a reply
     /// opened right after the other player accepts still uses the pre-accept state until
     /// the friend screen is reopened. Unsolicited pushes use rqid 0 so they cannot consume
-    /// a parked request's reply.
+    /// a parked request's reply. Only PES 2010 records a friend watch, so only it is pushed to.
     /// </summary>
     private async Task PublishFriendListAsync(CommandContext ctx, params int[] pids)
     {
-        if (ctx.Profile != GameProfile.Pes2010Pc)
-            return;
-
         foreach (var pid in pids.Distinct())
         {
             var sessions = ctx.Hub.SessionsForPid(pid).Where(s => s.FriendListWatchRqid is not null).ToArray();
