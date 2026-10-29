@@ -36,7 +36,7 @@ public sealed class IndexModel(GameDbContext db, Hub hub, GameProfile game, IOpt
         Online = hub.ConnectedPlayerCount();
         Announcement = options.CurrentValue.Site.Announcement;
         Live = SiteData.LiveMatches(hub);
-        Top = (await new RankingQuery(db).OrderedAsync(Ranked ? 6 : 2, null, ct)).Take(5).ToList();
+        Top = (await new RankingQuery(db, game).OrderedAsync(Ranked ? 6 : 2, null, ct)).Take(5).ToList();
         Recent = await SiteData.NameAsync(db, SiteData.Finished(db).Take(8), ct);
         News = await db.Information.Where(i => i.Enabled).OrderByDescending(i => i.PublishedAt).Take(4).ToListAsync(ct);
     }

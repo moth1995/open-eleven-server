@@ -202,7 +202,7 @@ public sealed class ServerHarness : IAsyncDisposable
             Account = account,
             Name = "Local Player",
             NormalizedName = PlayerNamePolicy.Normalize("Local Player"),
-            Division = "D3C",
+            Division = Division.D5,
             Kind = "NORMAL",
             Lang = "EN",
             Intro = "PLAYERINFO FIELD TEST",

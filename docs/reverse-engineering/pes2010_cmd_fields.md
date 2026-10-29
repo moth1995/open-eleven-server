@@ -511,7 +511,7 @@ one who disconnects or detects desync.
 | 1 | `CMD_SET_INJURYGAMEEND` | `side` = `HOME`/`AWAY` | host-only |
 | 2 | `CMD_UPDATE_COMBINATION` | `total_comb`, `max_comb` (raw ints) | host-only |
 | 3 | `CMD_ADD_SCORE` | `goal_side`, `goal_player_side`, `assist_side`, `assist_player_side` — each `HOME`/`AWAY`; `goal_gameplayer_id`, `assist_gameplayer_id`, `goal_player_pid` (raw ints) | host-only. Field **names** are certain; the mapping of which of the 4 raw event values (`event[9]`, `event[0xb]`, `event[5]`, `event[7]`) fills which "side" field is inferred from call order (very likely correct — computed and emitted in matching sequence) but not proven at the disassembly/register level — see [Known gaps](#known-gaps) |
-| 4 | `CMD_ADD_FOUL` | `card_pid`, `card_side` (`HOME`/`AWAY`), `card_gameplayer_id`, `card_kind` (`YELLOW`/`RED`, confirmed 2-value enum), `injury_side` (`HOME`/`AWAY`), `injury_gameplayer_id`, nested `injury_data` (`symptom`, `level`, `level_no_self_conscious`), `injury_all`, `injury_one` | host-only. Same `injury_data` shape independently confirmed in the COMMU league injury-report call sites — canonical injury shape used everywhere |
+| 4 | `CMD_ADD_FOUL` | `card_pid`, `card_side` (`HOME`/`AWAY`), `card_gameplayer_id`, `card_kind` (`YELLOW`/`RED`/`NONE`), `injury_side` (`HOME`/`AWAY`), `injury_gameplayer_id`, nested `injury_data` (`part`, `symptom`, `level`, `level_no_self_conscious`), `injury_all`, `injury_one` | host-only. Sent for **every** foul, not only cards/injuries. Same `injury_data` shape independently confirmed in the COMMU league injury-report call sites — canonical injury shape used everywhere |
 | 5 | `CMD_SET_GAMETEAM` | `home_team_id`, `away_team_id` (raw ints) | host-only |
 | 6 | `CMD_UPDATE_ROOMSTATE` | `status` = `SETENV` (fixed) | host-only; fired entering the match-setup phase |
 | 7 | `CMD_UPDATE_ROOMSTATE` | `status` = `WAITING` (fixed) | **unconditional**; resets the room after a match |
@@ -522,6 +522,19 @@ one who disconnects or detects desync.
 | 0xc | `CMD_SET_GAMEMEMBER` | bare | host-only |
 | (push) | `CMD_REQ_FORFEITEDGAME_REPLY` | reply to an opponent's pushed forfeit request, consumed via `FUN_0072f5d0`/`FUN_007296c0` | unconditional, not tied to a local event — fires off an incoming push instead |
 | (every tick) | `CMD_GET_GAMEADDPOINT` | — (bare) | called every tick from the pump, and again from a post-match community-stats screen before `CMD_SET_COMMU_MATCHINFO` |
+
+**`CMD_ADD_FOUL` is not an "injury" packet.** It is emitted for every foul with the fouler
+in `card_*` and the fouled player in `injury_*`. Live captures (pes2010 and pes2012) show:
+
+* `card_kind=NONE` on most fouls, `YELLOW`/`RED` only when a card was shown;
+* `injury_side` always set, and always the opposite side of `card_side`;
+* `injury_gameplayer_id` = the fouled player (nonzero even without an injury, e.g. `52868`);
+* `injury_data={part=0,symptom=0,level=0,level_no_self_conscious=0}`, `injury_all=0`,
+  `injury_one=5` on every captured foul.
+
+So `injury_side`/`injury_gameplayer_id` only mean "who was fouled". A real injury is the
+nested `injury_data` record; the server now records an `INJURY` match event only when one of
+its four fields is nonzero (previously every foul became an injury row on the match page).
 
 Registered once at pump start (state 0), regardless of host status: `CMD_WATCH_ABNORMALEND`,
 `CMD_WATCH_FORFEITEDGAMEEND`, `CMD_WATCH_INJURYGAMEEND`, `CMD_WATCH_OWNGOALGAMEEND` — every peer watches for

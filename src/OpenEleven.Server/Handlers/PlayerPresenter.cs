@@ -18,7 +18,7 @@ public static class PlayerPresenter
 {
     public const int DesiredPositionCount = 13;
 
-    public static KvMessage ListEntry(Player p, GameProfile profile = GameProfile.Pes2011Pc) => new KvMessage()
+    public static KvMessage ListEntry(Player p, GameProfile profile) => new KvMessage()
         .Set("pid", p.Pid)
         .Set("date", p.LastPlayedAt is { } played
             ? new DateTimeOffset(DateTime.SpecifyKind(played, DateTimeKind.Utc)).ToUnixTimeSeconds()
@@ -29,7 +29,7 @@ public static class PlayerPresenter
         .Set("division", RankSystem.Label(p.Division, profile))
         .Set("rating", p.Rating);
 
-    public static KvMessage BlockListEntry(Player p, int roomId, GameProfile profile = GameProfile.Pes2011Pc) => new KvMessage()
+    public static KvMessage BlockListEntry(Player p, int roomId, GameProfile profile) => new KvMessage()
         .Set("pid", p.Pid)
         .Set("name", p.Name)
         .Set("division", RankSystem.Label(p.Division, profile))
@@ -49,8 +49,8 @@ public static class PlayerPresenter
     /// when the player has no history), and the versions are the ones the player's client
     /// reported at its last login.
     /// </summary>
-    public static KvMessage FillPlayerInfo(KvMessage message, Player p, string? division = null, bool listSyntax = false,
-        IReadOnlyList<int>? recentTeams = null)
+    public static KvMessage FillPlayerInfo(KvMessage message, Player p, GameProfile profile, bool listSyntax = false,
+        IReadOnlyList<int>? recentTeams = null, IReadOnlyList<KvMessage>? competitions = null)
     {
         var s = p.Stats;
         var teams = new object?[5];
@@ -58,9 +58,9 @@ public static class PlayerPresenter
             teams[i] = recentTeams is { Count: > 0 } ? (i < recentTeams.Count ? recentTeams[i] : 0) : (i == 0 ? p.FavoriteTeam : 0);
         static string Version(string? v) => string.IsNullOrWhiteSpace(v) ? "1.00" : v;
 
-        return message
+        message
             .Set("name", p.Name)
-            .Set("div", division ?? p.Division)
+            .Set("div", RankSystem.Label(p.Division, profile))
             .Set("match_num", s.MatchCount)
             .Set("win_num", s.WinCount)
             .Set("lose_num", s.LoseCount)
@@ -98,7 +98,10 @@ public static class PlayerPresenter
             .Set("desired_position", listSyntax
                 ? new KvArray(DesiredPositions(p.DesiredPositionMask).Values)
                 : DesiredPositions(p.DesiredPositionMask))
-            .Set("list_num", 0);
+            .Set("list_num", competitions?.Count ?? 0);
+        if (competitions is { Count: > 0 })
+            message.Set("compe_list", competitions);
+        return message;
     }
 
     // PES 2010 and 2011 take only the bracketed key=[a,b,c] form, as for ulist and player_data.

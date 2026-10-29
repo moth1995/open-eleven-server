@@ -190,20 +190,18 @@ public sealed class AccountHandlers(
             if (player is null)
                 return [ctx.Fail("ERR_DATABASE")];
 
-            // pes2011.exe maps div through D5|D4|D3|D2|D1|NONE (table 0x16) and stores -1 for
-            // the PES 2010 value "D3C", which the player-info screen then trips over.
-            var is2011 = options.CurrentValue.GameProfile == GameProfile.Pes2011Pc;
-            var division = options.CurrentValue.GameProfile == GameProfile.Pes2010Pc
-                ? RankSystem.Pes2010DivisionName(player.Division)
-                : RankSystem.Applies(options.CurrentValue.GameProfile)
-                   && player.Division is not ("D5" or "D4" or "D3" or "D2" or "D1" or "NONE")
-                    ? "D5"
-                    : null;
-
             var teams = await players.GetRecentTeamsAsync(player.Pid, 5, ctx.CancellationToken);
-            var reply = PlayerPresenter.FillPlayerInfo(ctx.Ok(), player, division,
-                listSyntax: options.CurrentValue.GameProfile is GameProfile.Pes2010Pc or GameProfile.Pes2011Pc, teams);
-            if (is2011)
+
+            // Competitions entered, one line per kind: the competition menu totals them. Nothing records
+            // the knockout rounds or the prizes yet, so those stay 0.
+            var competitions = (await players.GetCompetitionEntriesAsync(player.Pid, ctx.CancellationToken))
+                .GroupBy(e => e.Kind)
+                .Select(g => new KvMessage().Set("compe_name", g.Last().Name).Set("compe_kind", g.Key).Set("mode", "NORMAL")
+                    .Set("prize_num", 0).Set("playoff_num", 0).Set("join_num", g.Count()))
+                .ToList();
+            var reply = PlayerPresenter.FillPlayerInfo(ctx.Ok(), player, ctx.Profile,
+                listSyntax: true, teams, competitions);
+            if (ctx.Profile.IsModern())
             {
                 // Profile page 2 "Weekly Ranking TOP 10 / TOP 100": weeks finished in that range.
                 // Page 4 (Legends) "Matches": Legends rooms played; its combos are total/max_combination.
@@ -255,9 +253,7 @@ public sealed class AccountHandlers(
             var profile = options.CurrentValue.GameProfile;
             var (result, player) = await players.CreateForAccountAsync(
                 ctx.Session.AccountId, name, normalizedName, language,
-                options.CurrentValue.Rank.StartRating,
-                RankSystem.Applies(profile) ? RankSystem.Divisions[0] : "D3C",
-                ctx.CancellationToken);
+                options.CurrentValue.Rank.StartRating, ctx.CancellationToken);
 
             if (result != PlayerCreateResult.Created || player is null)
                 return [ctx.Fail("ERR_ALREADYEXISTS")];
@@ -339,12 +335,14 @@ public sealed class AccountHandlers(
         // A fresh profile starts at the rank system's start rating, in D5.
         if (RankSystem.Applies(options.CurrentValue.GameProfile))
         {
-            RankSystem.Normalize(player, options.CurrentValue.Rank, options.CurrentValue.GameProfile);
+            RankSystem.Normalize(player, options.CurrentValue.Rank);
             await players.SaveAsync(ctx.CancellationToken);
         }
 
         ctx.Session.Pid = player.Pid;
         ctx.Session.PlayerName = player.Name;
+        ctx.Session.Card = new PlayerCard(RankSystem.Label(player.Division, ctx.Profile),
+            player.Rating, player.Lang, player.SelfReportLevel, player.PositionWant);
         ctx.Session.DesiredPositionMask = player.DesiredPositionMask;
         ctx.Session.ChatEnabled = player.ChatEnabled;
         ctx.Session.State = SessionState.PlayerSelected;
@@ -422,6 +420,38 @@ public sealed class AccountHandlers(
             "Profile saved for pid {Pid}: country={Country} team={Team} intro='{Intro}'",
             player.Pid, player.Country, player.FavoriteTeam, player.Intro);
 
+        return [ctx.Ok()];
+    }
+
+    /// <summary>
+    /// The player's saved game plan (reply parsed by FUN_0052a680): <c>gameplan_data_size</c> bytes,
+    /// sent as the hex string <c>gameplan_data</c>. A size of 0 puts the client in its error
+    /// state, and so does ERR_DATANOTFOUND (seen in the client), so a player who has saved nothing
+    /// gets the default plan.
+    /// </summary>
+    [Command("CMD_GET_GAMEPLAN", Roles = ServiceRole.Menu, Profiles = GameProfiles.Modern)]
+    public async ValueTask<KvMessage[]> GetGamePlan(CommandContext ctx)
+    {
+        var player = await players.GetAsync(ctx.Request.GetInt32("pid", ctx.Session.Pid), ctx.CancellationToken);
+        if (player is null)
+            return [ctx.Fail("ERR_DATANOTFOUND")];
+
+        var plan = player.GamePlan.Length > 0 ? player.GamePlan : DefaultGamePlan.Hex;
+        return [ctx.Ok().Set("gameplan_data_size", plan.Length / 2).Set("gameplan_data", plan)];
+    }
+
+    /// <summary>Saves the game plan block as the client sent it (a hex string of gameplan_data_size bytes).</summary>
+    [Command("CMD_SET_GAMEPLAN", Roles = ServiceRole.Menu, Profiles = GameProfiles.Modern)]
+    public async ValueTask<KvMessage[]> SetGamePlan(CommandContext ctx)
+    {
+        var size = ctx.Request.GetInt32("gameplan_data_size", 0);
+        var data = ctx.Request.GetString("gameplan_data") ?? "";
+        if (size <= 0 || data.Length != size * 2 || data.Length > 4096 || !data.All(Uri.IsHexDigit)
+            || await players.GetAsync(ctx.Session.Pid, ctx.CancellationToken) is not { } player)
+            return [ctx.Fail("ERR_DATABASE")];
+
+        player.GamePlan = data;
+        await players.SaveAsync(ctx.CancellationToken);
         return [ctx.Ok()];
     }
 

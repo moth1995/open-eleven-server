@@ -86,17 +86,30 @@ public class GameProfileTests
             Build(GameProfile.Pes2011Pc).Entries.Single(e => e.Msg == "CMD_VARIANT").HandlerType);
     }
 
-    // pes2010.exe sends the same in-match commands as pes2011.exe (FUN_007c1f80).
+    // Every title sends the same in-match commands (pes2010.exe FUN_007c1f80, pes2011.exe); 2012 and later follow the modern default.
     [Theory]
     [InlineData(GameProfile.Pes2010Pc, true)]
     [InlineData(GameProfile.Pes2011Pc, true)]
-    [InlineData(GameProfile.Pes2013Pc, false)]
-    public void Match_commands_are_served_to_pes2010_and_pes2011(GameProfile profile, bool served)
+    [InlineData(GameProfile.Pes2012Pc, true)]
+    [InlineData(GameProfile.Pes2013Pc, true)]
+    public void Match_commands_are_served_to_every_title(GameProfile profile, bool served)
     {
-        var registry = CommandRegistry.Build(profile, typeof(Handlers.Pes2011Handlers).Assembly);
+        var registry = CommandRegistry.Build(profile, typeof(Handlers.GateHandlers).Assembly);
 
         foreach (var msg in new[] { "CMD_CHANGE_GAMEPHASE", "CMD_ADD_SCORE", "CMD_GET_GAMEADDPOINT", "CMD_SET_FORFEITEDGAMEEND" })
             Assert.Equal(served, registry.TryGet(msg, out _));
+    }
+
+    // An empty list makes both clients forfeit at Start Match; the client keeps at most 400 ids.
+    [Theory]
+    [InlineData(GameProfile.Pes2010Pc)]
+    [InlineData(GameProfile.Pes2011Pc)]
+    public void Usable_team_lists_fit_the_client_whitelist(GameProfile profile)
+    {
+        var teams = TitleProfiles.UseableTeams(profile);
+
+        Assert.InRange(teams.Length, 1, 400);
+        Assert.Equal(teams.Length, teams.Distinct().Count());
     }
 
     [Fact]

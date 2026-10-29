@@ -63,11 +63,15 @@ public static class SiteData
     public static List<MatchEventRow> Events(MatchRecord match)
         => match.Events.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.Split('|'))
-            .Where(f => f.Length >= 3)
+            // FOUL and MATCHINFO are bookkeeping for the community records, not match events.
+            .Where(f => f.Length >= 3 && f[0] is not ("FOUL" or "MATCHINFO"))
             .Select(f => new MatchEventRow(
                 PeriodNames[MatchSheet.PeriodOf(f[1])],
                 f[0] switch
                 {
+                    // GOAL|phase|credited side|pid|player|scorer's side|...: a scorer from the
+                    // other side is an own goal. Every title sends goal_player_side.
+                    "GOAL" when f.Length > 5 && f[5] is "HOME" or "AWAY" && f[5] != f[2] => "Own goal",
                     "GOAL" => "Goal",
                     "CARD" when f.Length > 3 && f[3] == "RED" => "Red card",
                     "CARD" => "Yellow card",

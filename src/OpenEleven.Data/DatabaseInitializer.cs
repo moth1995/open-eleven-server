@@ -26,6 +26,7 @@ public sealed class DatabaseInitializer(GameDbContext db, ILogger<DatabaseInitia
         await EnsureAccountSchemaAsync(ct);
         await EnsurePlayerColumnsAsync(ct);
         await EnsureModelSchemaAsync(ct);
+        await MigrateDivisionNamesAsync(ct);
         await RemoveLegacyDemoPlayerAsync(ct);
         await BackfillAndValidatePlayerNamesAsync(ct);
         await EnsurePlayerIndexesAsync(ct);
@@ -266,6 +267,51 @@ public sealed class DatabaseInitializer(GameDbContext db, ILogger<DatabaseInitia
         }
     }
 
+    /// <summary>
+    /// Divisions were stored as names (D5..D1, or D3C..D1 for PES 2010). Both ladders are the same
+    /// five steps in the same order, so a name becomes its position in the DivisionIndex column
+    /// (added by <see cref="EnsureModelSchemaAsync"/>) and the old column goes: its NOT NULL with
+    /// no default would fail every new player. Runs only while the old column exists, and
+    /// copies before it drops, so an interrupted run is simply repeated.
+    /// </summary>
+    private async Task MigrateDivisionNamesAsync(CancellationToken ct)
+    {
+        var provider = db.Database.ProviderName ?? "";
+        var sqlite = provider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase);
+        if (!sqlite && !provider.Contains("MySql", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var connection = db.Database.GetDbConnection();
+        var closeWhenDone = connection.State != ConnectionState.Open;
+        if (closeWhenDone)
+            await connection.OpenAsync(ct);
+
+        try
+        {
+            var q = sqlite ? "\"" : "`";
+            foreach (var table in new[] { "Players", "WeeklyRankings" })
+            {
+                var columns = sqlite
+                    ? await ReadSqliteColumnsAsync(connection, table, ct)
+                    : await ReadMySqlColumnsAsync(connection, table, ct);
+                if (!columns.Contains("Division") || !columns.Contains("DivisionIndex"))
+                    continue;
+
+                await ExecuteAsync(connection,
+                    $"UPDATE {q}{table}{q} SET {q}DivisionIndex{q} = CASE {q}Division{q} " +
+                    "WHEN 'D4' THEN 1 WHEN 'D3B' THEN 1 WHEN 'D3' THEN 2 WHEN 'D3A' THEN 2 " +
+                    "WHEN 'D2' THEN 3 WHEN 'D1' THEN 4 ELSE 0 END;", ct);
+                await ExecuteAsync(connection, $"ALTER TABLE {q}{table}{q} DROP COLUMN {q}Division{q};", ct);
+                log.LogInformation("Moved {Table} divisions from names to positions.", table);
+            }
+        }
+        finally
+        {
+            if (closeWhenDone)
+                await connection.CloseAsync();
+        }
+    }
+
     private async Task BackfillAndValidatePlayerNamesAsync(CancellationToken ct)
     {
         var allPlayers = await db.Players.OrderBy(p => p.Pid).ToListAsync(ct);
@@ -376,7 +422,7 @@ public sealed class DatabaseInitializer(GameDbContext db, ILogger<DatabaseInitia
         var p = account.Players[0];
         var s = p.Stats;
         return p.Name == "Local Player"
-               && p.Division == "D3C"
+               && p.Division == Division.D5
                && p.Kind == "NORMAL"
                && p.Lang == "EN"
                && p.Intro == "PLAYERINFO FIELD TEST"

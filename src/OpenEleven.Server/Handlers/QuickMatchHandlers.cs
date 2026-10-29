@@ -133,23 +133,23 @@ public sealed class QuickMatchHandlers(IPlayerRepository players, ILogger<QuickM
     /// </summary>
     [Command("MSG_QUICK_ACCEPT_MATCH_OFFER", Roles = Roles,
         RequiredState = SessionState.PlayerSelected)]
-    public ValueTask<KvMessage[]> AcceptMatchOffer(CommandContext ctx)
+    public async ValueTask<KvMessage[]> AcceptMatchOffer(CommandContext ctx)
     {
         ctx.Session.Push(ctx.Ok());
         var quick = ctx.Hub.QuickMatch;
         if (quick.GroupOf(ctx.Session) is not { } group)
-            return Reply.None();
+            return [];
 
         if (ctx.Request.GetString("result") != "NOERR")
         {
             log.LogInformation("pid {Pid} refused the quick match ({Result})", ctx.Session.Pid, ctx.Request.GetString("result"));
             quick.Leave(ctx.Session);
             group.TellCancelled(ctx.Session);
-            return Reply.None();
+            return [];
         }
 
         if (!group.Accepted(ctx.Session.Pid))
-            return Reply.None();
+            return [];
 
         quick.Complete(group);
         var owner = group.Members[0];
@@ -158,6 +158,16 @@ public sealed class QuickMatchHandlers(IPlayerRepository players, ILogger<QuickM
             owner.Type == "OC_Rank" ? "OC_RANKING" : "OC_FREE",
             new KvMessage().Set("type", owner.Type).Set("game_time", owner.GameTime).Set("frrate", owner.Frrate));
 
+        // "To Next Match" pairs two entrants of one competition; its results belong to that competition.
+        if (owner.Type == "COMPE")
+        {
+            var entered = new List<int>();
+            foreach (var m in group.Members)
+                entered.Add((await players.GetAsync(m.Session.Pid, ctx.CancellationToken))?.CompetitionId ?? 0);
+            if (entered.Distinct().Count() == 1)
+                room.CompeId = entered[0];
+        }
+
         var list = group.Members.Select((m, i) => new KvMessage()
             .Set("pid", m.Session.Pid)
             .Set("matching_order", i)
@@ -165,7 +175,7 @@ public sealed class QuickMatchHandlers(IPlayerRepository players, ILogger<QuickM
         foreach (var m in group.Members)
             m.Session.Push(KvMessage.Ok("MSG_QUICK_ACCEPT_MATCH_OFFER_RES", m.Rqid).Set("member", list));
         ctx.Hub.PublishQuickMatchRoom(room);
-        return Reply.None();
+        return [];
     }
 
     /// <summary>
@@ -230,7 +240,7 @@ public sealed class QuickMatchHandlers(IPlayerRepository players, ILogger<QuickM
                     .Set("fd_beginnermark", p?.BeginnerMark == true ? "YES" : "NO")
                     .Set("fd_position_want", p?.PositionWant ?? "")
                     .Set("fd_desired_position", p?.DesiredPositionMask ?? 0)
-                    .Set("division", RankSystem.Label(p?.Division, ctx.Profile))
+                    .Set("division", RankSystem.Label(p?.Division ?? default, ctx.Profile))
                     .Set("rating", p?.Rating ?? 0)
                     .Set("ml_division", "ML_DIVISION_5")
                     .Set("ml_point", 0);

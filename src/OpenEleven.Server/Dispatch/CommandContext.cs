@@ -26,6 +26,9 @@ public sealed class CommandContext(
     public int Rqid { get; } = request.Rqid;
     public ServiceRole Role => Session.Role;
 
+    /// <summary>The room the sender is in, or null.</summary>
+    public Room? CurrentRoom => Session.RoomId is { } id ? Hub.FindRoom(id) : null;
+
     /// <summary>The title this process serves, for handlers with a small per-title delta.</summary>
     public GameProfile Profile { get; } = profile;
 

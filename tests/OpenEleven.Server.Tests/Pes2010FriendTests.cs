@@ -127,7 +127,7 @@ public class Pes2010FriendTests
         await using var scope = harness.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<GameDbContext>();
         var account = new Account { GameId = name, PasswordHash = "x" };
-        var player = new Player { Name = name, NormalizedName = name.ToUpperInvariant(), Division = "D5" };
+        var player = new Player { Name = name, NormalizedName = name.ToUpperInvariant(), Division = Division.D5 };
         account.Players.Add(player);
         db.Accounts.Add(account);
         await db.SaveChangesAsync();

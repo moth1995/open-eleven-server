@@ -165,6 +165,16 @@ public sealed class KvReader
             if (i < s.Length && s[i] == ',')
             {
                 i++;
+
+                // The client writes a comma after every record, the last one too
+                // (CMD_SET_COMPLG_TEAM: "member=[{...},{...},]").
+                SkipWhitespace(s, ref i);
+                if (i < s.Length && s[i] == ']')
+                {
+                    i++;
+                    return items;
+                }
+
                 continue;
             }
 

@@ -52,4 +52,17 @@ public class SiteDataTests
             new MatchEventRow("Penalties", "Injury", true),
         ], SiteData.Events(match));
     }
+
+    // The CMD_ADD_SCORE seen live: credited to AWAY, scored by a HOME player.
+    [Fact]
+    public void A_goal_scored_by_the_other_side_reads_as_an_own_goal()
+    {
+        var match = new MatchRecord { Events = "GOAL|2ND|AWAY|2|35108|HOME|AWAY|0|HOME\nGOAL|1ST|HOME|7|12|\n" };
+
+        Assert.Equal(
+        [
+            new MatchEventRow("2nd half", "Own goal", true),
+            new MatchEventRow("1st half", "Goal", false),
+        ], SiteData.Events(match));
+    }
 }

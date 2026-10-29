@@ -158,7 +158,7 @@ public sealed class MatchResultsTests : IDisposable
             var db = scope.ServiceProvider.GetRequiredService<GameDbContext>();
             foreach (var p in db.Players.Include(p => p.Stats))
             {
-                p.Division = "D3";
+                p.Division = Division.D3;
                 p.Stats.MatchCount = 10;
                 p.SeasonMatches = 10;
                 p.SeasonPoints = p.Pid == 1 ? 30 : 3;
@@ -173,7 +173,7 @@ public sealed class MatchResultsTests : IDisposable
         }
 
         var (top, bottom) = (Load(1), Load(2));
-        Assert.Equal(("D2", "D4"), (top.Division, bottom.Division));
+        Assert.Equal((Division.D2, Division.D4), (top.Division, bottom.Division));
         Assert.StartsWith("D3,", top.PendingDivisionUpdate);
         Assert.Equal((0, 0), (top.SeasonPoints, top.WeeklyPoints));
 
@@ -185,9 +185,9 @@ public sealed class MatchResultsTests : IDisposable
     [Fact]
     public void Ranking_text_has_the_header_and_18_fields_per_line()
     {
-        var lines = new[] { new RankSystem.Line(7, "ma,rc", 10, 6, 2, 2, 20, "D2", 1100, Streak: 4) };
+        var lines = new[] { new RankSystem.Line(7, "ma,rc", 10, 6, 2, 2, 20, Division.D2, 1100, Streak: 4) };
 
-        var text = RankSystem.Format(lines, 1, 0, 100, new DateTime(2026, 10, 24, 12, 0, 0, DateTimeKind.Utc), null, registered: 9).Split('\n');
+        var text = RankSystem.Format(lines, 1, 0, 100, new DateTime(2026, 10, 24, 12, 0, 0, DateTimeKind.Utc), null, registered: 9, profile: Configuration.GameProfile.Pes2011Pc).Split('\n');
 
         // int, char, int: the client keeps the second number.
         Assert.Equal(("9/1", "2026/10/24 12:00:00"), (text[1], text[2]));
@@ -202,8 +202,8 @@ public sealed class MatchResultsTests : IDisposable
         // D5 is what PES 2010 rows may still hold; the client shows it as D3C = index 0.
         var lines = new[]
         {
-            new RankSystem.Line(7, "marc", 10, 6, 2, 2, 20, "D2", 1100, Streak: 4),
-            new RankSystem.Line(8, "away", 1, 0, 0, 1, 0, "D5", 990),
+            new RankSystem.Line(7, "marc", 10, 6, 2, 2, 20, Division.D2, 1100, Streak: 4),
+            new RankSystem.Line(8, "away", 1, 0, 0, 1, 0, Division.D5, 990),
         };
 
         var text = RankSystem.Format(lines, 6, 0, 100, new DateTime(2026, 10, 24, 12, 0, 0, DateTimeKind.Utc), null,
@@ -228,7 +228,7 @@ public sealed class MatchResultsTests : IDisposable
         }
         db.WeeklyRankings.Add(new WeeklyRankingEntry { WeekStart = 1_790_000_000, Pid = 2, Name = "away", Rank = 1, Points = 6, Matches = 2 });
         db.SaveChanges();
-        var query = new RankingQuery(db);
+        var query = new RankingQuery(db, Configuration.GameProfile.Pes2011Pc);
         var now = new DateTime(2026, 10, 24, 0, 0, 0, DateTimeKind.Utc);
 
         // Tab 1 sorts by matches; 9 is the same tab for the running week; weekid = index 0 = newest archive.

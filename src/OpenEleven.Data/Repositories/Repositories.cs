@@ -18,12 +18,21 @@ public interface IPlayerRepository
     Task<IReadOnlyList<Player>> GetLeaderboardAsync(int limit, CancellationToken ct = default);
     Task<int> CountInCompetitionAsync(int competitionId, CancellationToken ct = default);
 
+    /// <summary>How many entrants of the competition picked each team (teams picked at least once).</summary>
+    Task<IReadOnlyList<(int TeamId, int Players)>> GetCompetitionTeamCountsAsync(int competitionId, CancellationToken ct = default);
+
+    /// <summary>Keeps a record of the player entering the competition (once per competition).</summary>
+    Task RecordCompetitionEntryAsync(int pid, int competitionId, string kind, string name, CancellationToken ct = default);
+
+    /// <summary>The competitions the player has ever entered, oldest first.</summary>
+    Task<IReadOnlyList<CompetitionEntry>> GetCompetitionEntriesAsync(int pid, CancellationToken ct = default);
+
     /// <summary>Teams the player used in its latest completed matches, newest first.</summary>
     Task<IReadOnlyList<int>> GetRecentTeamsAsync(int pid, int count, CancellationToken ct = default);
-    /// <summary>Creates the account's profile with the title's starting rating and division.</summary>
+    /// <summary>Creates the account's profile with the title's starting rating, in the lowest division.</summary>
     Task<(PlayerCreateResult Result, Player? Player)> CreateForAccountAsync(
         int accountId, string name, string normalizedName, string language,
-        int rating, string division, CancellationToken ct = default);
+        int rating, CancellationToken ct = default);
     Task<PlayerDeleteResult> DeleteForAccountAsync(int accountId, CancellationToken ct = default);
     Task SaveAsync(CancellationToken ct = default);
 }
@@ -127,6 +136,27 @@ public sealed class PlayerRepository(GameDbContext db) : IPlayerRepository
     public Task<int> CountInCompetitionAsync(int competitionId, CancellationToken ct = default)
         => db.Players.CountAsync(p => p.CompetitionId == competitionId, ct);
 
+    public async Task RecordCompetitionEntryAsync(int pid, int competitionId, string kind, string name, CancellationToken ct = default)
+    {
+        if (await db.CompetitionEntries.AnyAsync(e => e.Pid == pid && e.CompeId == competitionId, ct))
+            return;
+
+        db.CompetitionEntries.Add(new CompetitionEntry
+        {
+            Pid = pid, CompeId = competitionId, Kind = kind, Name = name, JoinedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<CompetitionEntry>> GetCompetitionEntriesAsync(int pid, CancellationToken ct = default)
+        => await db.CompetitionEntries.AsNoTracking().Where(e => e.Pid == pid).OrderBy(e => e.Id).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<(int TeamId, int Players)>> GetCompetitionTeamCountsAsync(int competitionId, CancellationToken ct = default)
+        => (await db.Players.AsNoTracking().Where(p => p.CompetitionId == competitionId && p.CompetitionTeamId > 0)
+                .GroupBy(p => p.CompetitionTeamId).Select(g => new { TeamId = g.Key, Players = g.Count() })
+                .OrderByDescending(g => g.Players).ThenBy(g => g.TeamId).ToListAsync(ct))
+            .Select(g => (g.TeamId, g.Players)).ToList();
+
     public async Task<IReadOnlyList<int>> GetRecentTeamsAsync(int pid, int count, CancellationToken ct = default)
         => await db.Matches
             .Where(m => m.Completed && (m.HomePid == pid || m.AwayPid == pid))
@@ -138,7 +168,7 @@ public sealed class PlayerRepository(GameDbContext db) : IPlayerRepository
 
     public async Task<(PlayerCreateResult Result, Player? Player)> CreateForAccountAsync(
         int accountId, string name, string normalizedName, string language,
-        int rating, string division, CancellationToken ct = default)
+        int rating, CancellationToken ct = default)
     {
         if (await db.Players.AnyAsync(
                 p => p.AccountId == accountId || p.NormalizedName == normalizedName, ct))
@@ -150,7 +180,6 @@ public sealed class PlayerRepository(GameDbContext db) : IPlayerRepository
             Name = name,
             NormalizedName = normalizedName,
             Lang = language,
-            Division = division,
             Kind = "NORMAL",
             Rating = rating,
             Manner = 3,

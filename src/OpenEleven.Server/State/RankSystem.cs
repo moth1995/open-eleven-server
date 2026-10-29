@@ -19,66 +19,35 @@ namespace OpenEleven.Server.State;
 /// </summary>
 public static class RankSystem
 {
-    /// <summary>pes2011.exe enum 0x16 order; the ranking screen sends and reads the index.</summary>
-    public static readonly string[] Divisions = ["D5", "D4", "D3", "D2", "D1"];
-
     /// <summary>
-    /// Titles on the D5..D1 divisions. PES 2010 keeps its own names (D3C...), which
-    /// <see cref="Normalize"/> and the season moves would overwrite.
+    /// Titles with the rating, season and promotion rules. PES 2010 keeps a ladder but no seasons
+    /// here, so its players do not move through the divisions.
     /// </summary>
     public static bool Applies(GameProfile profile) => profile != GameProfile.Pes2010Pc;
 
-    /// <summary>The divisions the client knows (plus NONE); anything else breaks its parsers.</summary>
-    public static string DivisionName(string? value)
-        => value == "NONE" || Divisions.Contains(value) ? value! : "D5";
+    private static readonly string[] Pes2011Names = ["D5", "D4", "D3", "D2", "D1"];
+    private static readonly string[] Pes2010Names = ["D3C", "D3B", "D3A", "D2", "D1"];
 
     /// <summary>
-    /// PES 2010's own ladder: D1, D2, D3A, D3B, D3C (it starts in D3C). The internal
-    /// PES 2011 tiers must not leak into its search rows or profile screens.
+    /// The ladder's names in a title, lowest first. Their position is the division index of
+    /// pes2011.exe's enum 0x16, which the ranking screen sends and reads back (pes2010.exe
+    /// FUN_00729290 keeps 4 - index), so it is also what the database stores.
     /// </summary>
-    public static string Pes2010DivisionName(string? value) => value switch
-    {
-        "D1" or "D2" or "D3A" or "D3B" or "D3C" => value!,
-        "D3" => "D3A",
-        "D4" => "D3B",
-        _ => "D3C",
-    };
+    public static string[] DivisionNames(GameProfile profile)
+        => profile == GameProfile.Pes2010Pc ? Pes2010Names : Pes2011Names;
 
-    /// <summary>The division string a title's clients understand.</summary>
-    public static string Label(string? value, GameProfile profile)
-        => profile == GameProfile.Pes2010Pc ? Pes2010DivisionName(value) : DivisionName(value);
+    /// <summary>The division name a title's clients understand.</summary>
+    public static string Label(Division division, GameProfile profile)
+        => DivisionNames(profile)[(int)division];
 
     public const string WeekKey = "rank.week", SeasonKey = "rank.season", InitializedKey = "rank.initialized";
 
-    /// <summary>A never-played profile sits at the start rating, and every profile in a 2011 division.</summary>
-    public static void Normalize(Player p, RankOptions rank, GameProfile profile)
+    /// <summary>A never-played profile sits at the start rating.</summary>
+    public static void Normalize(Player p, RankOptions rank)
     {
         if (p.Stats.MatchCount == 0)
             p.Rating = rank.StartRating;
-        // PES 2010 stores D1..D3C; rewriting them to D5 loses the title's own ladder.
-        if (Applies(profile) && !Divisions.Contains(p.Division))
-            p.Division = "D5";
     }
-
-    /// <summary>PES 2010 rows damaged by the old unconditional D5 normalization.</summary>
-    private static void RepairPes2010Divisions(GameDbContext db)
-    {
-        foreach (var p in db.Players.Where(p => p.Division == "D5" || p.Division == "D4"
-                                                || p.Division == "D3" || p.Division == "D2" || p.Division == "D1"))
-            p.Division = Pes2010DivisionName(p.Division);
-    }
-
-    public static int DivisionIndex(string division) => Math.Max(0, Array.IndexOf(Divisions, division));
-
-    private static readonly string[] Pes2010RankingDivisions = ["D3C", "D3B", "D3A", "D2", "D1"];
-
-    /// <summary>
-    /// The divisions by the index the ranking screen sends and reads back in each row.
-    /// pes2010.exe (FUN_00729290) stores 4 - index as its D1..D3C enum, so its ladder takes
-    /// the same five positions, lowest first.
-    /// </summary>
-    public static string[] RankingDivisions(GameProfile profile)
-        => profile == GameProfile.Pes2010Pc ? Pes2010RankingDivisions : Divisions;
 
     /// <summary>Monday 00:00 UTC of the week <paramref name="utc"/> falls in.</summary>
     public static DateTime WeekStart(DateTime utc)
@@ -106,27 +75,15 @@ public static class RankSystem
 
     /// <summary>
     /// Runs once per database: lifts existing ratings onto the start-rating scale (they used
-    /// to start at 0) and moves PES 2010 divisions into D1..D5.
+    /// to start at 0).
     /// </summary>
-    public static async Task InitializeAsync(GameDbContext db, RankOptions rank, DateTime now, GameProfile profile)
+    public static async Task InitializeAsync(GameDbContext db, RankOptions rank, DateTime now)
     {
-        // Repair runs independently of the one-time rank initialization so databases created
-        // by the old code get their PES 2010 ladder back.
-        if (profile == GameProfile.Pes2010Pc)
-        {
-            RepairPes2010Divisions(db);
-            await db.SaveChangesAsync();
-        }
-
         if (await db.Settings.FindAsync(InitializedKey) is not null)
             return;
 
         foreach (var p in await db.Players.Include(p => p.Stats).ToListAsync())
-        {
             p.Rating += rank.StartRating;
-            if (Applies(profile) && !Divisions.Contains(p.Division))
-                p.Division = "D5";
-        }
 
         db.Settings.Add(new ServerSetting { Key = InitializedKey, Value = "1" });
         Set(db, WeekKey, Unix(WeekStart(now)).ToString(CultureInfo.InvariantCulture));
@@ -189,23 +146,22 @@ public static class RankSystem
 
         var players = await db.Players.Include(p => p.Stats).ToListAsync();
         var oldRank = players.ToDictionary(p => p.Pid, p => p.Rank);
-        var moves = new Dictionary<int, (string Old, string New)>();
+        var moves = new Dictionary<int, (Division Old, Division New)>();
 
         foreach (var group in players.Where(p => p.SeasonMatches >= rank.MinSeasonMatches).GroupBy(p => p.Division))
         {
             var ordered = group.OrderByDescending(p => p.SeasonPoints).ThenByDescending(p => p.Rating).ToList();
-            var index = DivisionIndex(group.Key);
-            var up = index < Divisions.Length - 1 ? ordered.Count * rank.PromotePercent / 100 : 0;
-            var down = index > 0 ? ordered.Count * rank.RelegatePercent / 100 : 0;
+            var up = group.Key < Division.D1 ? ordered.Count * rank.PromotePercent / 100 : 0;
+            var down = group.Key > Division.D5 ? ordered.Count * rank.RelegatePercent / 100 : 0;
             foreach (var p in ordered.Take(up))
-                moves[p.Pid] = (p.Division, Divisions[index + 1]);
+                moves[p.Pid] = (p.Division, group.Key + 1);
             foreach (var p in ordered.Skip(ordered.Count - down).Where(p => !moves.ContainsKey(p.Pid)))
-                moves[p.Pid] = (p.Division, Divisions[index - 1]);
+                moves[p.Pid] = (p.Division, group.Key - 1);
         }
 
         foreach (var p in players)
         {
-            Normalize(p, rank, profile);
+            Normalize(p, rank);
             p.Rating = (int)Math.Round(rank.StartRating + (p.Rating - rank.StartRating) * rank.SeasonRatingCarry);
             p.SeasonPoints = p.SeasonMatches = 0;
             if (moves.TryGetValue(p.Pid, out var move))
@@ -220,7 +176,7 @@ public static class RankSystem
         {
             var (from, to) = moves[p.Pid];
             p.PendingDivisionUpdate = string.Join(',', from, oldRank[p.Pid], to, p.Rank, date);
-            var promoted = DivisionIndex(to) > DivisionIndex(from);
+            var promoted = to > from;
             db.Notices.Add(new PlayerNotice
             {
                 Pid = p.Pid,
@@ -242,7 +198,7 @@ public static class RankSystem
 
     /// <summary>One ranking screen line: what it shows, and what it sorts by.</summary>
     public sealed record Line(int Pid, string Name, int Matches, int Wins, int Draws, int Losses, int Value,
-        string Division, int Rating, int Goals = 0, int Streak = 0);
+        Division Division, int Rating, int Goals = 0, int Streak = 0);
 
     /// <summary>
     /// The sort of each ranking tab (1..7; 9..15 are the same tabs for the running week), as
@@ -274,8 +230,8 @@ public static class RankSystem
     /// the one before the count (weekly) is the player's own row there.
     /// </summary>
     public static string Format(IReadOnlyList<Line> ordered, int type, int from, int records,
-        DateTime updated, (DateTime Start, DateTime End)? week, int registered = 0,
-        GameProfile profile = GameProfile.Pes2011Pc)
+        DateTime updated, (DateTime Start, DateTime End)? week, int registered,
+        GameProfile profile)
     {
         var pes2010 = profile == GameProfile.Pes2010Pc;
         // PES 2010 needs a non-empty unused line; "-" is not a row, so no own row is shown.
@@ -301,7 +257,7 @@ public static class RankSystem
             sb.Append(i + 1).Append(',').Append(l.Pid).Append(',').Append(l.Name.Replace(",", " ").Replace("\"", "'"))
                 .Append(',').Append(pes2010 ? "0" : "").Append(',').Append(l.Matches).Append(',').Append(l.Wins)
                 .Append(',').Append(l.Draws).Append(',').Append(l.Losses).Append(',').Append(l.Streak).Append(',')
-                .Append(Math.Max(0, Array.IndexOf(RankingDivisions(profile), Label(l.Division, profile))))
+                .Append((int)l.Division)
                 .Append(',').Append(l.Rating).Append(",0,0,0,0,0,0,0\n");
         }
 

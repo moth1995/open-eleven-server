@@ -96,7 +96,7 @@ public sealed class RankHandlers(GameDbContext db, TimeProvider time, ILogger<Ra
 
         var counts = await db.Players.GroupBy(p => p.Division).Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(g => g.Key, g => g.Count, ctx.CancellationToken);
-        var divcount = RankSystem.Divisions.Select(d => (object?)counts.GetValueOrDefault(d)).Append(0).ToArray();
+        var divcount = Enum.GetValues<Division>().Select(d => (object?)counts.GetValueOrDefault(d)).Append(0).ToArray();
 
         player.PendingDivisionUpdate = "";
         await db.SaveChangesAsync(ctx.CancellationToken);
@@ -129,21 +129,31 @@ public sealed class RankHandlers(GameDbContext db, TimeProvider time, ILogger<Ra
     /// <summary>
     /// The archived weeks (FUN_005f2870/FUN_005f2be0): date_list_num, then
     /// date_list[i].start_date / end_date as unix seconds, newest first.
+    /// </summary>
+    [Command("CMD_GET_WEEKLYRANKINGDATELIST", Roles = ServiceRole.Menu, Profiles = GameProfiles.Modern)]
+    public async ValueTask<KvMessage[]> GetWeeklyRankingDates(CommandContext ctx)
+    {
+        var weeks = await RankingQuery.ArchivedWeeksAsync(db, WeeksShown, ctx.CancellationToken);
+        if (weeks.Count == 0)
+            return [ctx.Fail("ERR_WEEKLYRANKINGNOTFOUND")];
+
+        return [ctx.Ok().SetList("date_list_num", "date_list", weeks.Select(start => Week(new KvMessage(), start)).ToArray())];
+    }
+
+    /// <summary>
     /// PES 2010 (FUN_0072a640) also reads date_list[i].id, the weekid it posts back, and adds
     /// the running week itself, so it takes an empty list where the error leaves it nothing.
     /// </summary>
-    [Command("CMD_GET_WEEKLYRANKINGDATELIST", Roles = ServiceRole.Menu)]
-    public async ValueTask<KvMessage[]> GetWeeklyRankingDates(CommandContext ctx)
+    [Command("CMD_GET_WEEKLYRANKINGDATELIST", Roles = ServiceRole.Menu, Profiles = GameProfile.Pes2010Pc)]
+    public async ValueTask<KvMessage[]> GetWeeklyRankingDatesPes2010(CommandContext ctx)
     {
-        var pes2010 = options.CurrentValue.GameProfile == GameProfile.Pes2010Pc;
         var weeks = await RankingQuery.ArchivedWeeksAsync(db, WeeksShown, ctx.CancellationToken);
         if (weeks.Count == 0)
-            return pes2010 ? [ctx.Ok().Set("date_list_num", 0)] : [ctx.Fail("ERR_WEEKLYRANKINGNOTFOUND")];
+            return [ctx.Ok().Set("date_list_num", 0)];
 
-        var entries = weeks.Select(start => (pes2010 ? new KvMessage().Set("id", start) : new KvMessage())
-            .Set("start_date", start)
-            .Set("end_date", start + 7 * 24 * 3600 - 1)).ToArray();
-        return [ctx.Ok().SetList("date_list_num", "date_list", entries)];
+        return [ctx.Ok().SetList("date_list_num", "date_list", weeks.Select(start => Week(new KvMessage().Set("id", start), start)).ToArray())];
     }
 
+    private static KvMessage Week(KvMessage entry, int start)
+        => entry.Set("start_date", start).Set("end_date", start + 7 * 24 * 3600 - 1);
 }

@@ -184,6 +184,16 @@ public class KvReaderTests
     }
 
     [Fact]
+    public void A_record_list_may_end_with_a_comma()
+    {
+        // CMD_SET_COMPLG_TEAM writes one after every member, the last included.
+        var message = _reader.TryParse("rqid=3,member=[{a=1,b={c=2}},{a=4,b={c=5}},],msg=\"X\"");
+        Assert.NotNull(message);
+        Assert.Equal(new[] { 1, 4 }, message!.GetList("member").Select(m => m.GetInt32("a")));
+        Assert.Equal("X", message.GetString("msg"));
+    }
+
+    [Fact]
     public void TryParse_returns_null_on_garbage()
     {
         Assert.Null(_reader.TryParse("this is not a payload"));
